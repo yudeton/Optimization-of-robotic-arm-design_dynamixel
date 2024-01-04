@@ -61,13 +61,13 @@ roslaunch dynamics dynamics_general_robot.launch
 ```bash
 roslaunch teco_config demo.launch
 ##moveit python interface 
-rosrun teco_config move_group_python_interface_tutorial.py 
+rosrun teco_config move_group_python_interface_tutorial.py  x
 ```
 
 ```bash
 roslaunch teco_config demo.launch
 ##moveit c++ interface launch
-roslaunch moveit_tutorials move_group_interface_teco.launch 
+roslaunch moveit_tutorials move_group_interface_teco.launch  x
 ```
 
 # 執行moveit industrial motion demo
