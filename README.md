@@ -48,7 +48,8 @@ pip3 install -r requirements.txt
 
 # 範例程式
 ==================
-## 運行手臂軌跡規劃,求取各軸角度,速度,加速度
+## 運行手臂軌跡規劃,求取各軸角度,速度,加速度(開不起來)
+[rospack] Error: package 'trajectory_generation' not found
 ```bash
 rosrun trajectory_generation trajectory_generation_teco.py 
 ```
