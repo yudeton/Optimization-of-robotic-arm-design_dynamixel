@@ -93,9 +93,10 @@ tensorboard --logdir {log}
 
 # DQN
 roslaunch dynamics dynamics_dynamixel_robot_dqn.launch
+![captura](https://github.com/yudeton/Optimization-of-robotic-arm-design_dynamixel/assets/104203935/b1067e3c-3af5-463a-9c81-36ddfcb42e80)
 # DDQN
 roslaunch dynamics dynamics_dynamixel_robot_ddqn.launch
-
+![captura_000](https://github.com/yudeton/Optimization-of-robotic-arm-design_dynamixel/assets/104203935/1891bde4-5b2a-4fa5-92a9-da540b2e538a)
 # tensorboard 可視化
 tensorboard --logdir ~/Documents/drl_robotics_arm_ws/src/Optimization-of-robotic-arm-design/dynamics/src/dynamics/runs/
 
