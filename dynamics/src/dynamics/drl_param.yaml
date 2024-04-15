@@ -1,8 +1,8 @@
 op_function: case2_real
 arm_structure_dof: 6
 DRL_algorithm: 'DQN'
-cmd_run: 1
-test_model_name: 'DQN-6-variable-20240312-130814'
+cmd_run: 2 
+test_model_name: 'DQN-6-variable-20240410-081152'
 op_dof: 6
 op_payload: 3
 op_payload_position: [0 ,0 , 0.04]
