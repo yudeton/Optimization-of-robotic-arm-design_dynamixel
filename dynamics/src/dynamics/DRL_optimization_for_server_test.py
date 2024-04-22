@@ -285,10 +285,10 @@ class Trainer:
         # TODO: fixed
         # self.num_iterations = 15000 # @param {type:"integer"}
         # test
-        self.num_iterations = 60 # @param {type:"integer"}
+        self.num_iterations = 60000 # @param {type:"integer"}
         # self.initial_collect_steps = 1000  # @param {type:"integer"}
         # test
-        self.initial_collect_steps = 10  # @param {type:"integer"}
+        self.initial_collect_steps = 1000  # @param {type:"integer"}
         self.collect_steps_per_iteration = 1  # @param {type:"integer"}
         self.replay_buffer_capacity = 100000  # @param {type:"integer"}
 
@@ -355,9 +355,9 @@ class Trainer:
 
         return next_time_step
 
-    def train(self, pre_fr=0, train_eps = 30):
+    def train(self, pre_fr=0, train_eps = 300):
         rospy.loginfo("-------------數據採集------------")
-        self.initial_collect_steps = 10
+        # self.initial_collect_steps = 2
         # time_step_collect = self.env.reset()
         for _ in range(self.initial_collect_steps):
             
@@ -560,7 +560,7 @@ class ReTrainer:
         self.num_iterations = iterations # @param {type:"integer"}
         # self.initial_collect_steps = 1000  # @param {type:"integer"}
         # test
-        self.initial_collect_steps = 10  # @param {type:"integer"}
+        self.initial_collect_steps = 1000  # @param {type:"integer"}
         self.collect_steps_per_iteration = 1  # @param {type:"integer"}
         self.replay_buffer_capacity = 100000  # @param {type:"integer"}
 
@@ -727,8 +727,8 @@ if __name__ == "__main__":
     drl = drl_optimization()
     # plot_cfg = PlotConfig()
     ros_topic = RosTopic()
-    ddqn_train_eps = 50  # 训练的回合数
-    ddqn_test_eps = 10  # 测试的回合数
+    ddqn_train_eps = 1000  # 训练的回合数
+    ddqn_test_eps = 100  # 测试的回合数
     
     
     with open(curr_path+'/drl_param.yaml', 'r') as f:
@@ -752,6 +752,8 @@ if __name__ == "__main__":
             from RobotOptEnv_dynamixel import RobotOptEnv, RobotOptEnv_3dof, RobotOptEnv_5dof
         elif op_function_flag == "case2":
             from RobotOptEnv_dynamixel_v2 import RobotOptEnv, RobotOptEnv_3dof, RobotOptEnv_5dof
+        elif op_function_flag == "case2_real_test":
+            from RobotOptEnv_dynamixel_v2_real_note import RobotOptEnv
         elif op_function_flag == "case3":
             from RobotOptEnv_dynamixel_v3_motion import RobotOptEnv, RobotOptEnv_3dof, RobotOptEnv_5dof
         elif op_function_flag == "case1_real":
@@ -905,7 +907,7 @@ if __name__ == "__main__":
             drl.env.model_select = "train"
             drl.env.point_Workspace_cal_Monte_Carlo()
             train_env, train_agent = drl.env_agent_config(cfg, ros_topic.DRL_algorithm, seed=1)
-            num_iterations = 20
+            num_iterations = 10000
             retrain_path = select_path
             retrain = ReTrainer(train_agent, train_env, model_path, num_iterations, retrain_path)
             retrain.train(train_eps = ddqn_train_eps)
