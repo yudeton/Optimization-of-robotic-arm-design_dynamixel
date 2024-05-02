@@ -447,8 +447,8 @@ class RobotOptEnv(gym.Env):
 
         if self.train_flag == 5:    #reachable_tmp和reach_score的排列組合來更動獎勵整型函數
             
-            L3_def = (1.412*(self.state[5]**3))#/((self.outer_radius_std**4)-(self.state[8]**4)) #小臂撓度
-            L2_def = ((1.412+self.motor_weight_axis_3)*(self.state[4]**3))#/((self.outer_radius_std**4)-(self.state[7]**4)) #大臂撓度
+            L3_def = (1.412*(self.state[5]**3))/4.3164#self.outer_radius_std**4)-(self.state[8]**4)) #小臂撓度
+            L2_def = ((1.412+self.motor_weight_axis_3)*(self.state[4]**3))/4.3164#/((self.outer_radius_std**4)-(self.state[7]**4)) #大臂撓度
             
             if self.state[2] == 1 and self.reachable_tmp == 1:      #最好狀況(現在和上一刻可達性都等於1)
                 shaping = (
