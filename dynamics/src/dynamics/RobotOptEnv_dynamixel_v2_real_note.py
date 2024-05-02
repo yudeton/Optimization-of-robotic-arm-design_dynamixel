@@ -89,7 +89,8 @@ class RobotOptEnv(gym.Env):
         self.outer_radius_std = 15   # 預設觀測標準值(外徑固定)
         self.inner_radius_std_L2 = 12.5   # 預設觀測標準值(L2內徑)
         self.inner_radius_std_L3 = 12.5   # 預設觀測標準值(L3內徑)
-
+        self.prev_L3_def = 0
+        self.prev_L2_def = 0
         
 
         self.high_power_consumption = float('inf')
@@ -453,8 +454,8 @@ class RobotOptEnv(gym.Env):
             if self.state[2] == 1 and self.reachable_tmp == 1:      #最好狀況(現在和上一刻可達性都等於1)
                 shaping = (
                             # - self.state[6]/5 # 馬達扭矩成本
-                            - L3_def/100
-                            - L2_def/100
+                            #- L3_def/100
+                            #- L2_def/100
                             - self.state[1]/5 # 功耗
                             + 2000 * self.state[3] # 可操作性
                         ) 
@@ -464,8 +465,8 @@ class RobotOptEnv(gym.Env):
             elif self.state[2] == 1 and self.reachable_tmp != 1:    #現在可達＝1,但上一刻不等於1
                 tmp_shaping = (
                             # - self.state[6]/5  # 馬達扭矩成本
-                            - L3_def/100
-                            - L2_def/100
+                            #- L3_def/100
+                            #- L2_def/100
                             - self.state[1]/5 # 功耗
                             + 2000 * self.state[3] # 可操作性
                         ) 
@@ -525,6 +526,12 @@ class RobotOptEnv(gym.Env):
                 # reward -= torque_score * 3
                 if torque_score == 0:
                     reward += 50
+                    if L2_def < self.prev_L2_def:
+                        reward += 10
+                    self.prev_L2_def = L2_def
+                    if L3_def < self.prev_L3_def:
+                        reward += 10
+                    self.prev_L3_def = L3_def
                     for x in range(6):
                         if self.torque_sum_list[x] == self.state[6]: #x越大代表馬達越小，獎勵越多
                             reward += x * 10
@@ -538,7 +545,6 @@ class RobotOptEnv(gym.Env):
         
         self.ratio_over = False
         self.torque_over = False #reset
-       
         current_design = [self.std_L2, self.std_L3, self.motor_rated[1], self.motor_rated[2]]
         #回傳資訊 {self.state, 獎勵，是否中止，目前的(L2長度，L3長度,第二軸馬達,第三軸馬達)}
         return self.state, reward, terminated, current_design
