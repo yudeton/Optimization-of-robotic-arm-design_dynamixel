@@ -453,8 +453,8 @@ class RobotOptEnv(gym.Env):
             if self.state[2] == 1 and self.reachable_tmp == 1:      #最好狀況(現在和上一刻可達性都等於1)
                 shaping = (
                             # - self.state[6]/5 # 馬達扭矩成本
-                            - L3_def/100
-                            - L2_def/100
+                            - L3_def/1500
+                            - L2_def/1500
                             - self.state[1]/5 # 功耗
                             + 2000 * self.state[3] # 可操作性
                         ) 
@@ -464,8 +464,8 @@ class RobotOptEnv(gym.Env):
             elif self.state[2] == 1 and self.reachable_tmp != 1:    #現在可達＝1,但上一刻不等於1
                 tmp_shaping = (
                             # - self.state[6]/5  # 馬達扭矩成本
-                            - L3_def/100
-                            - L2_def/100
+                            - L3_def/1500
+                            - L2_def/1500
                             - self.state[1]/5 # 功耗
                             + 2000 * self.state[3] # 可操作性
                         ) 
