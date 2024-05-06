@@ -79,6 +79,10 @@ import yaml
 # add
 import tensorflow as tf
 from tf_agents.agents.dqn.dqn_agent import DqnAgent, DdqnAgent
+
+from tf_agents.agents.ddpg import DdpgAgent
+from tf_agents.networks import actor_distribution_network, critic_network
+
 from tf_agents.networks.q_network import QNetwork
 from tf_agents.agents.categorical_dqn import categorical_dqn_agent
 from tf_agents.drivers import dynamic_step_driver
@@ -87,6 +91,7 @@ from tf_agents.environments import tf_py_environment
 from tf_agents.eval import metric_utils
 from tf_agents.metrics import tf_metrics
 from tf_agents.networks import categorical_q_network
+
 from tf_agents.policies import random_tf_policy
 from tf_agents.replay_buffers import tf_uniform_replay_buffer
 from tf_agents.trajectories import trajectory
@@ -196,6 +201,32 @@ class drl_optimization:
                 q_network = ddqn_network,
                 optimizer = optimizer,
                 n_step_update=n_step_update,
+                td_errors_loss_fn = common.element_wise_squared_loss,
+                gamma=gamma,
+                train_step_counter = self.global_step)
+            agent.initialize()
+            rospy.loginfo("DRL algorithm init: %s", algorithm)
+        elif algorithm == 'DDPG':
+            actor_network = actor_distribution_network.ActorDistributionNetwork(
+                env.observation_spec(),
+                env.action_spec(),
+                fc_layer_params=fc_layer_params)
+            critic_network = critic_network.CriticNetwork(
+                (env.observation_spec(), env.action_spec()),
+                observation_fc_layer_params=None,
+                action_fc_layer_params=None,
+                joint_fc_layer_params=fc_layer_params)
+            agent = DdpgAgent(
+                env.time_step_spec(),
+                env.action_spec(),
+                actor_network=actor_network,
+                critic_network=critic_network,
+                actor_optimizer=tf.compat.v1.train.AdamOptimizer(learning_rate=learning_rate),
+                critic_optimizer=tf.compat.v1.train.AdamOptimizer(learning_rate=learning_rate),
+                ou_stddev=0.2,
+                ou_damping=0.15,
+                target_update_tau=0.05,
+                target_update_period=5,
                 td_errors_loss_fn = common.element_wise_squared_loss,
                 gamma=gamma,
                 train_step_counter = self.global_step)
@@ -845,7 +876,10 @@ if __name__ == "__main__":
             elif ros_topic.DRL_algorithm == 'C51':
                 model_path = curr_path + '/train_results' + '/C51_outputs/' + op_function_flag + '/' + str(arm_structure_dof) + \
                 '/' + str(ros_topic.DRL_algorithm) + '-' + str(arm_structure_dof) + '-' +str(drl.env.action_select) + '-' + curr_time + '/models/'  # 保存模型的路径
-            
+            elif ros_topic.DRL_algorithm == 'DDPG':
+                model_path = curr_path + '/train_results' + '/DDPG_outputs/' + op_function_flag + '/' + str(arm_structure_dof) + \
+                '/' + str(ros_topic.DRL_algorithm) + '-' + str(arm_structure_dof) + '-' +str(drl.env.action_select) + '-' + curr_time + '/models/'  # 保存模型的路径
+
             # 訓練
             drl.env.model_select = "train"
             drl.env.point_Workspace_cal_Monte_Carlo()

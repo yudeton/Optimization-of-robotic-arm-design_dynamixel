@@ -116,12 +116,22 @@ class RobotOptEnv(gym.Env):
         self.motor_weights = {44.7: 0.855, 25.3: 0.732,5.1: 0.34}        #馬達扭矩映射重量
         self.train_flag = 1
         # TODO: 增加馬達模組選型action(工作空間)
-        self.action_space = spaces.Discrete(10) # TODO: fixed 12種action
+        # self.action_space = spaces.Discrete(10) # TODO: fixed 12種action
         
         # TODO: observation space for torque, reach, motor cost, weight, manipulability
         self.observation_space = spaces.Box(np.array([self.low_torque_over,self.low_power_consumption, self.low_reach_eva, self.low_manipulability, self.low_std_L2, self.low_std_L3, self.low_torque_cost ]), 
                                             np.array([self.high_torque_over,self.high_power_consumption, self.high_reach_eva, self.high_manipulability, self.high_std_L2, self.high_std_L3, self.high_torque_cost]), 
                                             dtype=np.float64)
+        
+        # TODO: ddpg space _NEW
+        continuous_action_space = spaces.Box(low=-1.0, high=1.0, shape=(1,), dtype=np.float64)
+        discrete_action_space_count = 6
+        action_spaces = [
+            continuous_action_space if i < 2 else spaces.Discrete(discrete_action_space_count)
+            for i in range(8)
+        ]
+        self.action_space = spaces.Tuple(action_spaces)
+
         # TODO: reward 歸一化
         self.state = np.array([0,0,0,0,0,0,0], dtype=np.float64)
         self.pre_state = np.array([0,0,0,0,0,0,0], dtype=np.float64)
@@ -180,6 +190,24 @@ class RobotOptEnv(gym.Env):
         assert self.action_space.contains(action), "%r (%s) invalid"%(action, type(action))
         if self.action_select == 'variable':    #單獨調整連桿長度或選擇馬達
             if action == 0: 
+                self.std_L2 += action[0]
+            elif action == 1:
+                self.std_L3 += action[1]
+            elif action == 2:
+                self.motor_type_axis_2 = 5.1
+            elif action == 3:
+                self.motor_type_axis_2 = 25.3
+            elif action == 4:
+                self.motor_type_axis_2 = 44.7
+            elif action == 5:
+                self.motor_type_axis_3 = 5.1 
+            elif action == 6:
+                self.motor_type_axis_3 = 25.3
+            elif action == 7:
+                self.motor_type_axis_3 = 44.7
+          
+        elif self.action_select == 'variable':    #單獨調整連桿長度或選擇馬達
+            if action == 0: 
                 self.std_L2 -= 1.0
             elif action == 1:
                 self.std_L2 += 1.0
@@ -199,7 +227,7 @@ class RobotOptEnv(gym.Env):
                 self.motor_type_axis_3 = 25.3
             elif action == 9:
                 self.motor_type_axis_3 = 44.7
-          
+
         elif self.action_select == 'fixed':     #總長固定
             if action == 0: # 軸2  # 短 # 型號1
                 self.std_L2 -= 1.0
