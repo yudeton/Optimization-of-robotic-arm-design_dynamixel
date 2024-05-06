@@ -211,7 +211,7 @@ class drl_optimization:
                 env.observation_spec(),
                 env.action_spec(),
                 fc_layer_params=fc_layer_params)
-            critic_network = critic_network.CriticNetwork(
+            critic_net = critic_network.CriticNetwork(
                 (env.observation_spec(), env.action_spec()),
                 observation_fc_layer_params=None,
                 action_fc_layer_params=None,
@@ -220,7 +220,7 @@ class drl_optimization:
                 env.time_step_spec(),
                 env.action_spec(),
                 actor_network=actor_network,
-                critic_network=critic_network,
+                critic_network=critic_net,
                 actor_optimizer=tf.compat.v1.train.AdamOptimizer(learning_rate=learning_rate),
                 critic_optimizer=tf.compat.v1.train.AdamOptimizer(learning_rate=learning_rate),
                 ou_stddev=0.2,
