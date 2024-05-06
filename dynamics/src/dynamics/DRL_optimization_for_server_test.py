@@ -80,8 +80,7 @@ import yaml
 import tensorflow as tf
 from tf_agents.agents.dqn.dqn_agent import DqnAgent, DdqnAgent
 
-from tf_agents.agents.ddpg import DdpgAgent
-from tf_agents.networks import actor_distribution_network, critic_network
+from tf_agents.agents.ddpg import critic_network
 
 from tf_agents.networks.q_network import QNetwork
 from tf_agents.agents.categorical_dqn import categorical_dqn_agent
@@ -91,6 +90,7 @@ from tf_agents.environments import tf_py_environment
 from tf_agents.eval import metric_utils
 from tf_agents.metrics import tf_metrics
 from tf_agents.networks import categorical_q_network
+from tf_agents.networks import actor_distribution_network
 
 from tf_agents.policies import random_tf_policy
 from tf_agents.replay_buffers import tf_uniform_replay_buffer
@@ -161,21 +161,21 @@ class drl_optimization:
         env = tf_py_environment.TFPyEnvironment(train_py_env)
         # eval_env = tf_py_environment.TFPyEnvironment(eval_py_env)
 
-        categorical_q_net = categorical_q_network.CategoricalQNetwork(
-            env.observation_spec(),
-            env.action_spec(),
-            num_atoms=num_atoms,
-            fc_layer_params=fc_layer_params)
-
-        dqn_network = QNetwork(
-            env.observation_spec(),
-            env.action_spec(),
-            fc_layer_params=fc_layer_params)
-
-        ddqn_network = QNetwork(
-            env.observation_spec(),
-            env.action_spec(),
-            fc_layer_params=fc_layer_params)
+        #categorical_q_net = categorical_q_network.CategoricalQNetwork(
+            #env.observation_spec(),
+            #env.action_spec(),
+            #num_atoms=num_atoms,
+            #fc_layer_params=fc_layer_params)
+#
+        #dqn_network = QNetwork(
+            #env.observation_spec(),
+            #env.action_spec(),
+            #fc_layer_params=fc_layer_params)
+#
+        #ddqn_network = QNetwork(
+            #env.observation_spec(),
+            #env.action_spec(),
+            #fc_layer_params=fc_layer_params)
 
         optimizer = tf.compat.v1.train.AdamOptimizer(learning_rate=learning_rate)
         self.global_step = tf.compat.v1.train.get_or_create_global_step()
@@ -186,7 +186,7 @@ class drl_optimization:
             agent = DqnAgent(
                 env.time_step_spec(),
                 env.action_spec(),
-                q_network = dqn_network,
+                q_network = QNetwork(env.observation_spec(),env.action_spec(),fc_layer_params=fc_layer_params),
                 optimizer = optimizer,
                 n_step_update=n_step_update,
                 td_errors_loss_fn = common.element_wise_squared_loss,
@@ -198,7 +198,7 @@ class drl_optimization:
             agent = DdqnAgent(
                 env.time_step_spec(),
                 env.action_spec(),
-                q_network = ddqn_network,
+                q_network = QNetwork(env.observation_spec(),env.action_spec(),fc_layer_params=fc_layer_params),
                 optimizer = optimizer,
                 n_step_update=n_step_update,
                 td_errors_loss_fn = common.element_wise_squared_loss,
@@ -236,7 +236,7 @@ class drl_optimization:
             agent = categorical_dqn_agent.CategoricalDqnAgent(
                 env.time_step_spec(),
                 env.action_spec(),
-                categorical_q_network=categorical_q_net,
+                categorical_q_network=categorical_q_network.CategoricalQNetwork(env.observation_spec(),env.action_spec(),num_atoms=num_atoms,fc_layer_params=fc_layer_params),
                 optimizer=optimizer,
                 min_q_value=min_q_value,
                 max_q_value=max_q_value,
