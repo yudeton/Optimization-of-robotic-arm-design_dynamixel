@@ -188,23 +188,37 @@ class RobotOptEnv(gym.Env):
     # TODO: fixed
     def step(self, action):
         assert self.action_space.contains(action), "%r (%s) invalid"%(action, type(action))
-        if self.action_select == 'variable':    #單獨調整連桿長度或選擇馬達
-            if action == 0: 
-                self.std_L2 += action[0]
-            elif action == 1:
-                self.std_L3 += action[1]
-            elif action == 2:
-                self.motor_type_axis_2 = 5.1
-            elif action == 3:
-                self.motor_type_axis_2 = 25.3
-            elif action == 4:
-                self.motor_type_axis_2 = 44.7
-            elif action == 5:
-                self.motor_type_axis_3 = 5.1 
-            elif action == 6:
-                self.motor_type_axis_3 = 25.3
-            elif action == 7:
-                self.motor_type_axis_3 = 44.7
+        if self.action_select == 'variable2':    #單獨調整連桿長度或選擇馬達
+            
+            # 分解动作为连续和离散部分
+            continuous_actions, discrete_actions = action[:2], action[2:]
+    
+            # 应用连续动作
+            self.std_L2 += continuous_actions[0]  # 调整连杆 L2
+            self.std_L3 += continuous_actions[1]  # 调整连杆 L3
+            
+            # 应用离散动作，假设离散动作决定电机类型
+            motor_types = [5.1, 25.3, 44.7]  # 电机类型的选项
+            self.motor_type_axis_2 = motor_types[discrete_actions[0] % 3]  # 选择电机类型
+            self.motor_type_axis_3 = motor_types[discrete_actions[1] % 3]
+            
+            
+            # if action == 0: 
+            #     self.std_L2 += action[0]
+            # elif action == 1:
+            #     self.std_L3 += action[1]
+            # elif action == 2:
+            #     self.motor_type_axis_2 = 5.1
+            # elif action == 3:
+            #     self.motor_type_axis_2 = 25.3
+            # elif action == 4:
+            #     self.motor_type_axis_2 = 44.7
+            # elif action == 5:
+            #     self.motor_type_axis_3 = 5.1 
+            # elif action == 6:
+            #     self.motor_type_axis_3 = 25.3
+            # elif action == 7:
+            #     self.motor_type_axis_3 = 44.7
           
         elif self.action_select == 'variable':    #單獨調整連桿長度或選擇馬達
             if action == 0: 
@@ -581,7 +595,7 @@ class RobotOptEnv(gym.Env):
     def reset(self):
         if self.model_select == "train":
             rospy.loginfo("model_select:%s", self.model_select)
-            if self.action_select == 'variable':
+            if self.action_select in ('variable','variable2'):
                 self.std_L2, self.std_L3 = self.robot_urdf.opt_random_generate_write_urdf() # 啟用隨機的L2,L3長度urdf(導致長度不為整數)
             elif self.action_select == 'fixed':
                 random_total_arm_length = np.random.uniform(low=10, high=60) # FIX: 臂長長度

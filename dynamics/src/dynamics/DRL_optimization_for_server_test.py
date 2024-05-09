@@ -79,14 +79,17 @@ import yaml
 # add
 import tensorflow as tf
 from tf_agents.agents.dqn.dqn_agent import DqnAgent, DdqnAgent
+
+
 from tf_agents.agents import DdpgAgent
-from tf_agents.agents.ddpg import critic_network
+from tf_agents.agents.ddpg import ddpg_agent
+from tf_agents.networks import actor_distribution_network, q_network
+
 
 from tf_agents.networks.q_network import QNetwork
 from tf_agents.agents.categorical_dqn import categorical_dqn_agent
 from tf_agents.drivers import dynamic_step_driver
-from tf_agents.environments import suite_gym
-from tf_agents.environments import tf_py_environment
+from tf_agents.environments import suite_gym, tf_py_environment
 from tf_agents.eval import metric_utils
 from tf_agents.metrics import tf_metrics
 from tf_agents.networks import categorical_q_network
@@ -134,49 +137,19 @@ class drl_optimization:
     def env_agent_config(self, cfg, algorithm, seed=1):
         ''' 创建环境和智能体
         '''
-        # num_iterations = 15000 # @param {type:"integer"}
-
-        # initial_collect_steps = 1000  # @param {type:"integer"}
-        # collect_steps_per_iteration = 1  # @param {type:"integer"}
-        # replay_buffer_capacity = 100000  # @param {type:"integer"}
 
         fc_layer_params = (100,)
-
-        # batch_size = 64  # @param {type:"integer"}
         learning_rate = 1e-3  # @param {type:"number"}
         gamma = 0.99
-        # log_interval = 200  # @param {type:"integer"}
-
-        num_atoms = 51  # @param {type:"integer"}
-        min_q_value = -100  # @param {type:"integer"}
-        max_q_value = 50  # @param {type:"integer"}
+     
+        # num_atoms = 51  # @param {type:"integer"}c51
+        # min_q_value = -100  # @param {type:"integer"}
+        # max_q_value = 50  # @param {type:"integer"}
         n_step_update = 2  # @param {type:"integer"}
 
-        # num_eval_episodes = 10  # @param {type:"integer"}
-        # eval_interval = 1000  # @param {type:"integer"}
-
         train_py_env = suite_gym.wrap_env(self.env)
-        # eval_py_env = suite_gym.load(self.env)
-
         env = tf_py_environment.TFPyEnvironment(train_py_env)
-        # eval_env = tf_py_environment.TFPyEnvironment(eval_py_env)
-
-        #categorical_q_net = categorical_q_network.CategoricalQNetwork(
-            #env.observation_spec(),
-            #env.action_spec(),
-            #num_atoms=num_atoms,
-            #fc_layer_params=fc_layer_params)
-#
-        #dqn_network = QNetwork(
-            #env.observation_spec(),
-            #env.action_spec(),
-            #fc_layer_params=fc_layer_params)
-#
-        #ddqn_network = QNetwork(
-            #env.observation_spec(),
-            #env.action_spec(),
-            #fc_layer_params=fc_layer_params)
-
+        
         optimizer = tf.compat.v1.train.AdamOptimizer(learning_rate=learning_rate)
         self.global_step = tf.compat.v1.train.get_or_create_global_step()
 
@@ -206,16 +179,16 @@ class drl_optimization:
                 train_step_counter = self.global_step)
             agent.initialize()
             rospy.loginfo("DRL algorithm init: %s", algorithm)
+
         elif algorithm == 'DDPG':
             actor_network = actor_distribution_network.ActorDistributionNetwork(
                 env.observation_spec(),
                 env.action_spec(),
                 fc_layer_params=fc_layer_params)
-            critic_net = critic_network.CriticNetwork(
-                (env.observation_spec(), env.action_spec()),
-                observation_fc_layer_params=None,
-                action_fc_layer_params=None,
-                joint_fc_layer_params=fc_layer_params)
+            critic_net = QNetwork(
+                env.observation_spec(),
+                env.action_spec(),
+                fc_layer_params=fc_layer_params)
             agent = DdpgAgent(
                 env.time_step_spec(),
                 env.action_spec(),
@@ -232,20 +205,21 @@ class drl_optimization:
                 train_step_counter = self.global_step)
             agent.initialize()
             rospy.loginfo("DRL algorithm init: %s", algorithm)
-        elif algorithm == 'C51':
-            agent = categorical_dqn_agent.CategoricalDqnAgent(
-                env.time_step_spec(),
-                env.action_spec(),
-                categorical_q_network=categorical_q_network.CategoricalQNetwork(env.observation_spec(),env.action_spec(),num_atoms=num_atoms,fc_layer_params=fc_layer_params),
-                optimizer=optimizer,
-                min_q_value=min_q_value,
-                max_q_value=max_q_value,
-                n_step_update=n_step_update,
-                td_errors_loss_fn=common.element_wise_squared_loss,
-                gamma=gamma,
-                train_step_counter=self.global_step)
-            agent.initialize()
-            rospy.loginfo("DRL algorithm init: %s", algorithm)
+
+        # elif algorithm == 'C51':
+        #     agent = categorical_dqn_agent.CategoricalDqnAgent(
+        #         env.time_step_spec(),
+        #         env.action_spec(),
+        #         categorical_q_network=categorical_q_network.CategoricalQNetwork(env.observation_spec(),env.action_spec(),num_atoms=num_atoms,fc_layer_params=fc_layer_params),
+        #         optimizer=optimizer,
+        #         min_q_value=min_q_value,
+        #         max_q_value=max_q_value,
+        #         n_step_update=n_step_update,
+        #         td_errors_loss_fn=common.element_wise_squared_loss,
+        #         gamma=gamma,
+        #         train_step_counter=self.global_step)
+        #     agent.initialize()
+        #     rospy.loginfo("DRL algorithm init: %s", algorithm)
 
         # dqn_agent = DqnAgent(
         #     env.time_step_spec(),
