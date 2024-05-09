@@ -527,10 +527,10 @@ class RobotOptEnv(gym.Env):
                 if torque_score == 0:
                     reward += 50
                     if L2_def < self.prev_L2_def:
-                        reward += 10
+                        reward += 30
                     self.prev_L2_def = L2_def
                     if L3_def < self.prev_L3_def:
-                        reward += 10
+                        reward += 30
                     self.prev_L3_def = L3_def
                     for x in range(6):
                         if self.torque_sum_list[x] == self.state[6]: #x越大代表馬達越小，獎勵越多
