@@ -83,7 +83,7 @@ from tf_agents.agents.dqn.dqn_agent import DqnAgent, DdqnAgent
 
 from tf_agents.agents import DdpgAgent
 from tf_agents.agents.ddpg import ddpg_agent
-from tf_agents.networks import actor_distribution_network, q_network
+from tf_agents.networks import actor_distribution_network, network, encoding_network
 
 
 from tf_agents.networks.q_network import QNetwork
@@ -185,10 +185,15 @@ class drl_optimization:
                 env.observation_spec(),
                 env.action_spec(),
                 fc_layer_params=fc_layer_params)
-            critic_net = QNetwork(
-                env.observation_spec(),
-                env.action_spec(),
+            # critic_net = QNetwork(
+            #     env.observation_spec(),
+            #     env.action_spec(),
+            #     fc_layer_params=fc_layer_params)
+            critic_net = CustomCriticNetwork(
+                input_tensor_spec=(env.observation_spec(), env.action_spec()),
+                output_tensor_spec=tf.TensorSpec(shape=[1], dtype=tf.float32),
                 fc_layer_params=fc_layer_params)
+            
             agent = DdpgAgent(
                 env.time_step_spec(),
                 env.action_spec(),
@@ -242,10 +247,6 @@ class drl_optimization:
 # class PlotConfig:
 #     ''' 绘图相关参数设置
 #     '''
-
-#     def __init__(self) -> None:
-#         self.algo_name = algo_name  # 算法名称
-#         self.env_name = env_name  # 环境名称
 #         self.device = torch.device(
 #             "cuda" if torch.cuda.is_available() else "cpu")  # 检测GPU
 #         self.result_path = curr_path + "/outputs/" + self.env_name + \
@@ -253,7 +254,51 @@ class drl_optimization:
 #         self.model_path = curr_path + "/outputs/" + self.env_name + \
 #             '/' + curr_time + '/models/'  # 保存模型的路径
 #         self.save = True  # 是否保存图片
+class CustomCriticNetwork(network.Network):
+    def __init__(self,
+                 input_tensor_spec,
+                 output_tensor_spec=None,
+                 fc_layer_params=(100, ),
+                 activation_fn=tf.keras.activations.relu,
+                 name='CustomCriticNetwork'):
+        """初始化自定义的 Critic 网络。
+        
+        Args:
+            input_tensor_spec (tuple): 包含状态和动作的 specs，形如 (observation_spec, action_spec)。
+            output_tensor_spec (tf_agents.typing.types.TensorSpec): 输出的 tensor 规格。
+            fc_layer_params (tuple): 定义全连接层的单元数。
+            activation_fn: 激活函数。
+            name (str): 网络的名称。
+        """
+        super(CustomCriticNetwork, self).__init__(
+            input_tensor_spec=input_tensor_spec,
+            state_spec=(),  # Critic 网络不需要维护内部状态
+            name=name)
+        
+        self._output_tensor_spec = output_tensor_spec
+        self._encoder = encoding_network.EncodingNetwork(
+            input_tensor_spec=input_tensor_spec,
+            fc_layer_params=fc_layer_params,
+            activation_fn=activation_fn,
+            output_layers=[tf.keras.layers.Dense(output_tensor_spec.shape[0], activation=None)])
 
+
+    def call(self, inputs, step_type=None, network_state=()):
+        """网络的前向传播。
+
+        Args:
+            inputs (tuple): 包含观测值和动作的元组。
+            step_type: 当前步骤类型。
+            network_state: 网络状态。
+
+        Returns:
+            output: 价值评估。
+            network_state: 网络状态。
+        """
+        state, action = inputs
+        inputs = tf.concat([state, action], 1)
+        output, network_state = self._encoder(inputs, step_type, network_state)
+        return output, network_state
 class RosTopic:
     def __init__(self):
         self.sub_taskcmd = rospy.Subscriber("/cal_command", cal_cmd, self.cmd_callback)
