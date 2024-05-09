@@ -280,7 +280,11 @@ class CustomCriticNetwork(network.Network):
             input_tensor_spec=input_tensor_spec,
             fc_layer_params=fc_layer_params,
             activation_fn=activation_fn,
-            output_layers=[tf.keras.layers.Dense(output_tensor_spec.shape[0], activation=None)])
+            #output_fc_layer_params=[output_tensor_spec.shape[0]],
+            #output_activation_fn=None
+            )
+        self._output_layer = tf.keras.layers.Dense(
+            output_tensor_spec.shape[0], activation=None, kernel_initializer='glorot_uniform')
 
 
     def call(self, inputs, step_type=None, network_state=()):
@@ -296,9 +300,11 @@ class CustomCriticNetwork(network.Network):
             network_state: 网络状态。
         """
         state, action = inputs
-        inputs = tf.concat([state, action], 1)
-        output, network_state = self._encoder(inputs, step_type, network_state)
-        return output, network_state
+        inputs = tf.concat([state, action], -1)
+        outer, network_state = self._encoder(inputs, step_type, network_state)
+        outputs = self._output_layer(outer)
+
+        return outputs, network_state
 class RosTopic:
     def __init__(self):
         self.sub_taskcmd = rospy.Subscriber("/cal_command", cal_cmd, self.cmd_callback)
