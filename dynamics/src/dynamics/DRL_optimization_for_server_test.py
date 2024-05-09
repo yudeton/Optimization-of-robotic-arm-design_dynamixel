@@ -79,7 +79,7 @@ import yaml
 # add
 import tensorflow as tf
 from tf_agents.agents.dqn.dqn_agent import DqnAgent, DdqnAgent
-
+from tf_agents.agents import DdpgAgent
 from tf_agents.agents.ddpg import critic_network
 
 from tf_agents.networks.q_network import QNetwork
