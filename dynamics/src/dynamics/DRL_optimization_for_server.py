@@ -1,4 +1,4 @@
-#!/usr/bin/env python3
+#!/usr/bin/env python4
 # coding: utf-8
 import importlib
 import sys
@@ -666,7 +666,7 @@ class ReTrainer:
         # returns = [avg_return]
         rospy.loginfo("-------------Retrain Start------------")
         for _ in range(self.num_iterations):
-
+            episode_return = 0.0
         # Collect a few steps using collect_policy and save to the replay buffer.
             for _ in range(self.collect_steps_per_iteration):
                 time_step = self.collect_step(self.env, self.agent.collect_policy)
