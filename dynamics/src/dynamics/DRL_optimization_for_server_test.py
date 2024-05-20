@@ -82,6 +82,7 @@ from tf_agents.agents.dqn.dqn_agent import DqnAgent, DdqnAgent
 
 from tf_agents.networks import actor_distribution_network, value_network
 from tf_agents.networks import encoding_network
+from tf_agents.typing import types
 from tf_agents.trajectories import time_step as ts
 from tf_agents.specs import tensor_spec
 from tf_agents.agents.ddpg import ddpg_agent
@@ -273,20 +274,46 @@ class CustomActorNetwork(actor_distribution_network.ActorDistributionNetwork):
         return {'continuous_actions': continuous_actions, 'discrete_actions_logits': discrete_actions_logits}, network_state
 
 
-class CustomCriticNetwork(tf.keras.Model):
-    def __init__(self, observation_spec, action_spec, fc_layer_params=(100,)):
-        super(CustomCriticNetwork, self).__init__()
-        self._encoder = encoding_network.EncodingNetwork(
-            input_tensor_spec=(observation_spec, action_spec),
-            fc_layer_params=fc_layer_params,
-            activation_fn=tf.keras.activations.relu)
+class CustomCriticNetwork(tf.keras.layers.Layer):
 
-    def call(self, inputs, step_type=None, training=False):
-        state, action = inputs
-        x = tf.concat([state, action], -1)
-        x, _ = self._encoder(x, step_type=step_type, training=training)
-        value = tf.keras.layers.Dense(1)(x)
-        return value
+    def __init__(self,
+                 input_tensor_spec: types.NestedTensorSpec,
+                 output_tensor_spec: types.TensorSpec,
+                 fc_layer_params=(100,),
+                 activation_fn=tf.keras.activations.relu,
+                 name='CustomCriticNetwork'):
+        super(CustomCriticNetwork, self).__init__(name=name)
+
+        # 由于我们有多个输入（观测值和行动），我们需要一个合并层
+        self._preprocessing_combiner = tf.keras.layers.Concatenate(axis=-1)
+
+        # 构建一个编码网络来处理输入
+        self._encoder = encoding_network.EncodingNetwork(
+            input_tensor_spec=input_tensor_spec,
+            fc_layer_params=fc_layer_params,
+            activation_fn=activation_fn,
+            preprocessing_combiner=self._preprocessing_combiner  # 添加合并层
+        )
+
+        # 输出层
+        self._output_layer = tf.keras.layers.Dense(
+            output_tensor_spec.shape[0],
+            activation=None,
+            kernel_initializer='glorot_uniform')
+
+
+    def call(self, inputs, step_type=None, network_state=(), training=False):
+        # 将观测值和行动合并在一起
+        # 请确保传递给网络的 inputs 是一个包含两个元素的元组，其中第一个是观测值，第二个是行动
+        state, actions = inputs
+        x = tf.concat([state, actions], -1)
+
+        # 使用编码网络处理输入
+        x, network_state = self._encoder(x, step_type=step_type, network_state=network_state, training=training)
+
+        # 计算最终的输出
+        output = self._output_layer(x)
+        return output, network_state
 
 
 class RosTopic:
