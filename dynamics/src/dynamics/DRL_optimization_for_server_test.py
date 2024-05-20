@@ -238,25 +238,40 @@ class drl_optimization:
 
 
 class CustomActorNetwork(actor_distribution_network.ActorDistributionNetwork):
-    def __init__(self, input_tensor_spec, output_tensor_spec, fc_layer_params=(100,)):
+    def __init__(self, input_tensor_spec, action_spec, fc_layer_params=(100,)):
         super(CustomActorNetwork, self).__init__(
             input_tensor_spec,
-            output_tensor_spec,
+            action_spec,
             fc_layer_params=fc_layer_params,
             activation_fn=tf.keras.activations.relu)
-        # 修改最后一层为直接输出动作
-        self._action_layer = tf.keras.layers.Dense(
-            output_tensor_spec.shape[0], activation=tf.keras.activations.tanh, name='action')
+        
+        # 根据您的动作空间设置不同的输出层
+        # 假设您的动作空间中前两个动作是连续的，其余是离散的
+        num_continuous_actions = 2  # 根据您的环境调整此值
+        num_discrete_actions = sum(spec.maximum - spec.minimum + 1 for spec in tf.nest.flatten(action_spec)[2:])
+        
+        # 连续动作输出层
+        self._continuous_action_layer = tf.keras.layers.Dense(
+            num_continuous_actions, activation=tf.keras.activations.tanh, name='continuous_actions')
+
+        # 离散动作输出层
+        self._discrete_action_layer = tf.keras.layers.Dense(
+            num_discrete_actions, activation=None, name='discrete_actions')  # 使用 logits 输出
+
 
     def call(self, observations, step_type=None, network_state=(), training=False):
         # 前向传递
-        outer, network_state = super(CustomActorNetwork, self).call(
+        state, network_state = super(CustomActorNetwork, self).call(
             observations,
             step_type=step_type,
             network_state=network_state,
             training=training)
-        actions = self._action_layer(outer)
-        return actions, network_state
+        
+        continuous_actions = self._continuous_action_layer(state)
+        discrete_actions_logits = self._discrete_action_layer(state)
+        
+        return {'continuous_actions': continuous_actions, 'discrete_actions_logits': discrete_actions_logits}, network_state
+
 
 class CustomCriticNetwork(tf.keras.Model):
     def __init__(self, observation_spec, action_spec, fc_layer_params=(100,)):
