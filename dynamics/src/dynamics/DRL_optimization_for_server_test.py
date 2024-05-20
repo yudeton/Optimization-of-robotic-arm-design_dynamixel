@@ -182,12 +182,12 @@ class drl_optimization:
 
         elif algorithm == 'DDPG':
             
-            actor_net = CustomActorNetwork(env.observation_spec, env.action_spec)
-            critic_net = CustomCriticNetwork(env.observation_spec, env.action_spec)
+            actor_net = CustomActorNetwork(env.observation_spec(), env.action_spec())
+            critic_net = CustomCriticNetwork(env.observation_spec(), env.action_spec())
             
             agent = ddpg_agent.DdpgAgent(
-                ts.time_step_spec(env.observation_spec),
-                env.action_spec,
+                ts.time_step_spec(env.observation_spec()),
+                env.action_spec(),
                 actor_network=actor_net,
                 critic_network=critic_net,
                 actor_optimizer=tf.compat.v1.train.AdamOptimizer(learning_rate=1e-3),
