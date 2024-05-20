@@ -80,11 +80,11 @@ import yaml
 import tensorflow as tf
 from tf_agents.agents.dqn.dqn_agent import DqnAgent, DdqnAgent
 
-
-from tf_agents.agents import DdpgAgent
+from tf_agents.networks import actor_distribution_network, value_network
+from tf_agents.networks import encoding_network
+from tf_agents.trajectories import time_step as ts
+from tf_agents.specs import tensor_spec
 from tf_agents.agents.ddpg import ddpg_agent
-from tf_agents.networks import actor_distribution_network, network, encoding_network
-
 
 from tf_agents.networks.q_network import QNetwork
 from tf_agents.agents.categorical_dqn import categorical_dqn_agent
@@ -181,34 +181,27 @@ class drl_optimization:
             rospy.loginfo("DRL algorithm init: %s", algorithm)
 
         elif algorithm == 'DDPG':
-            actor_network = actor_distribution_network.ActorDistributionNetwork(
-                env.observation_spec(),
-                env.action_spec(),
-                fc_layer_params=fc_layer_params)
-            # critic_net = QNetwork(
-            #     env.observation_spec(),
-            #     env.action_spec(),
-            #     fc_layer_params=fc_layer_params)
-            critic_net = CustomCriticNetwork(
-                input_tensor_spec=(env.observation_spec(), env.action_spec()),
-                output_tensor_spec=tf.TensorSpec(shape=[1], dtype=tf.float32),
-                fc_layer_params=fc_layer_params)
             
-            agent = DdpgAgent(
-                env.time_step_spec(),
-                env.action_spec(),
-                actor_network=actor_network,
+            actor_net = CustomActorNetwork(env.observation_spec, env.action_spec)
+            critic_net = CustomCriticNetwork(env.observation_spec, env.action_spec)
+            
+            agent = ddpg_agent.DdpgAgent(
+                ts.time_step_spec(env.observation_spec),
+                env.action_spec,
+                actor_network=actor_net,
                 critic_network=critic_net,
-                actor_optimizer=tf.compat.v1.train.AdamOptimizer(learning_rate=learning_rate),
-                critic_optimizer=tf.compat.v1.train.AdamOptimizer(learning_rate=learning_rate),
+                actor_optimizer=tf.compat.v1.train.AdamOptimizer(learning_rate=1e-3),
+                critic_optimizer=tf.compat.v1.train.AdamOptimizer(learning_rate=1e-3),
                 ou_stddev=0.2,
                 ou_damping=0.15,
                 target_update_tau=0.05,
                 target_update_period=5,
-                td_errors_loss_fn = common.element_wise_squared_loss,
-                gamma=gamma,
-                train_step_counter = self.global_step)
+                td_errors_loss_fn=tf.math.squared_difference,
+                gamma=0.99,
+                train_step_counter=tf.Variable(0))
+
             agent.initialize()
+            
             rospy.loginfo("DRL algorithm init: %s", algorithm)
 
         # elif algorithm == 'C51':
@@ -244,67 +237,43 @@ class drl_optimization:
         return env, agent
 
 
-# class PlotConfig:
-#     ''' 绘图相关参数设置
-#     '''
-#         self.device = torch.device(
-#             "cuda" if torch.cuda.is_available() else "cpu")  # 检测GPU
-#         self.result_path = curr_path + "/outputs/" + self.env_name + \
-#             '/' + curr_time + '/results/'  # 保存结果的路径
-#         self.model_path = curr_path + "/outputs/" + self.env_name + \
-#             '/' + curr_time + '/models/'  # 保存模型的路径
-#         self.save = True  # 是否保存图片
-class CustomCriticNetwork(network.Network):
-    def __init__(self,
-                 input_tensor_spec,
-                 output_tensor_spec=None,
-                 fc_layer_params=(100, ),
-                 activation_fn=tf.keras.activations.relu,
-                 name='CustomCriticNetwork'):
-        """初始化自定义的 Critic 网络。
-        
-        Args:
-            input_tensor_spec (tuple): 包含状态和动作的 specs，形如 (observation_spec, action_spec)。
-            output_tensor_spec (tf_agents.typing.types.TensorSpec): 输出的 tensor 规格。
-            fc_layer_params (tuple): 定义全连接层的单元数。
-            activation_fn: 激活函数。
-            name (str): 网络的名称。
-        """
-        super(CustomCriticNetwork, self).__init__(
-            input_tensor_spec=input_tensor_spec,
-            state_spec=(),  # Critic 网络不需要维护内部状态
-            name=name)
-        
-        self._output_tensor_spec = output_tensor_spec
-        self._encoder = encoding_network.EncodingNetwork(
-            input_tensor_spec=input_tensor_spec,
+class CustomActorNetwork(actor_distribution_network.ActorDistributionNetwork):
+    def __init__(self, input_tensor_spec, output_tensor_spec, fc_layer_params=(100,)):
+        super(CustomActorNetwork, self).__init__(
+            input_tensor_spec,
+            output_tensor_spec,
             fc_layer_params=fc_layer_params,
-            activation_fn=activation_fn,
-            #output_fc_layer_params=[output_tensor_spec.shape[0]],
-            #output_activation_fn=None
-            )
-        self._output_layer = tf.keras.layers.Dense(
-            output_tensor_spec.shape[0], activation=None, kernel_initializer='glorot_uniform')
+            activation_fn=tf.keras.activations.relu)
+        # 修改最后一层为直接输出动作
+        self._action_layer = tf.keras.layers.Dense(
+            output_tensor_spec.shape[0], activation=tf.keras.activations.tanh, name='action')
 
+    def call(self, observations, step_type=None, network_state=(), training=False):
+        # 前向传递
+        outer, network_state = super(CustomActorNetwork, self).call(
+            observations,
+            step_type=step_type,
+            network_state=network_state,
+            training=training)
+        actions = self._action_layer(outer)
+        return actions, network_state
 
-    def call(self, inputs, step_type=None, network_state=()):
-        """网络的前向传播。
+class CustomCriticNetwork(tf.keras.Model):
+    def __init__(self, observation_spec, action_spec, fc_layer_params=(100,)):
+        super(CustomCriticNetwork, self).__init__()
+        self._encoder = encoding_network.EncodingNetwork(
+            input_tensor_spec=(observation_spec, action_spec),
+            fc_layer_params=fc_layer_params,
+            activation_fn=tf.keras.activations.relu)
 
-        Args:
-            inputs (tuple): 包含观测值和动作的元组。
-            step_type: 当前步骤类型。
-            network_state: 网络状态。
-
-        Returns:
-            output: 价值评估。
-            network_state: 网络状态。
-        """
+    def call(self, inputs, step_type=None, training=False):
         state, action = inputs
-        inputs = tf.concat([state, action], -1)
-        outer, network_state = self._encoder(inputs, step_type, network_state)
-        outputs = self._output_layer(outer)
+        x = tf.concat([state, action], -1)
+        x, _ = self._encoder(x, step_type=step_type, training=training)
+        value = tf.keras.layers.Dense(1)(x)
+        return value
 
-        return outputs, network_state
+
 class RosTopic:
     def __init__(self):
         self.sub_taskcmd = rospy.Subscriber("/cal_command", cal_cmd, self.cmd_callback)
