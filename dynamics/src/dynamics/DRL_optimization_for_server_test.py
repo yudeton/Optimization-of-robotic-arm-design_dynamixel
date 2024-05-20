@@ -275,7 +275,6 @@ class CustomActorNetwork(actor_distribution_network.ActorDistributionNetwork):
 
 
 class CustomCriticNetwork(tf.keras.layers.Layer):
-
     def __init__(self,
                  input_tensor_spec: types.NestedTensorSpec,
                  output_tensor_spec: types.TensorSpec,
@@ -297,7 +296,7 @@ class CustomCriticNetwork(tf.keras.layers.Layer):
 
         # 输出层
         self._output_layer = tf.keras.layers.Dense(
-            output_tensor_spec.shape[0],
+            1,
             activation=None,
             kernel_initializer='glorot_uniform')
 
@@ -306,7 +305,9 @@ class CustomCriticNetwork(tf.keras.layers.Layer):
         # 将观测值和行动合并在一起
         # 请确保传递给网络的 inputs 是一个包含两个元素的元组，其中第一个是观测值，第二个是行动
         state, actions = inputs
-        x = tf.concat([state, actions], -1)
+        x = self._preprocessing_combiner([state, actions])
+        
+        # x = tf.concat([state, actions], -1)
 
         # 使用编码网络处理输入
         x, network_state = self._encoder(x, step_type=step_type, network_state=network_state, training=training)
