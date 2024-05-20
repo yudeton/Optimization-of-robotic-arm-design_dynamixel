@@ -149,7 +149,13 @@ class drl_optimization:
         tf_env = tf_py_environment.TFPyEnvironment(self.env())
 
         # 连续动作的 Actor 网络
-        actor_net = actor_network.ActorNetwork(
+        actor_net = actor_distribution_network.ActorNetwork(
+            tf_env.observation_spec(),
+            tf_env.action_spec()['continuous'],
+            fc_layer_params=fc_layer_params)
+        
+        # 连续动作的 Critic 网络
+        critic_net = value_network.ValueNetwork(
             tf_env.observation_spec(),
             tf_env.action_spec()['continuous'],
             fc_layer_params=fc_layer_params)
@@ -161,14 +167,21 @@ class drl_optimization:
             fc_layer_params=fc_layer_params)
 
         # DDPG 代理
-        actor_optimizer = tf.compat.v1.train.AdamOptimizer(learning_rate=1e-4)
+        actor_optimizer = tf.compat.v1.train.AdamOptimizer(learning_rate)
+        critic_optimizer = tf.compat.v1.train.AdamOptimizer(learning_rate)
         ddpg = ddpg_agent.DdpgAgent(
             tf_env.time_step_spec(),
             tf_env.action_spec()['continuous'],
             actor_network=actor_net,
-            optimizer=actor_optimizer,
+            critic_network=critic_net,
+            actor_optimizer=actor_optimizer,
+            critic_optimizer=critic_optimizer,
             target_update_tau=0.05,
-            target_update_period=5)
+            target_update_period=5,
+            td_errors_loss_fn=common.element_wise_huber_loss,
+            gamma=gamma,
+            reward_scale_factor=1.0,
+            train_step_counter=tf.Variable(0))
 
         # DQN 代理
         q_optimizer = tf.compat.v1.train.AdamOptimizer(learning_rate)
