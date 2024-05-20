@@ -78,7 +78,9 @@ import yaml
 
 # add
 import tensorflow as tf
-from tf_agents.agents.dqn.dqn_agent import DqnAgent, DdqnAgent
+from tf_agents.agents.dqn import dqn_agent
+from tf_agents.agents.ddpg import ddpg_agent
+from tf_agents.networks import actor_network, q_network
 
 from tf_agents.networks import actor_distribution_network, value_network
 from tf_agents.networks import encoding_network
@@ -142,179 +144,123 @@ class drl_optimization:
         fc_layer_params = (100,)
         learning_rate = 1e-3  # @param {type:"number"}
         gamma = 0.99
-     
-        # num_atoms = 51  # @param {type:"integer"}c51
-        # min_q_value = -100  # @param {type:"integer"}
-        # max_q_value = 50  # @param {type:"integer"}
         n_step_update = 2  # @param {type:"integer"}
 
-        train_py_env = suite_gym.wrap_env(self.env)
-        env = tf_py_environment.TFPyEnvironment(train_py_env)
-        
-        optimizer = tf.compat.v1.train.AdamOptimizer(learning_rate=learning_rate)
-        self.global_step = tf.compat.v1.train.get_or_create_global_step()
+        tf_env = tf_py_environment.TFPyEnvironment(self.env())
 
-        # train_step_counter = tf.Variable(0)
-        # agent = DDQNAgent(self.config)  # 创建智能体
-        if algorithm == 'DQN':
-            agent = DqnAgent(
-                env.time_step_spec(),
-                env.action_spec(),
-                q_network = QNetwork(env.observation_spec(),env.action_spec(),fc_layer_params=fc_layer_params),
-                optimizer = optimizer,
-                n_step_update=n_step_update,
-                td_errors_loss_fn = common.element_wise_squared_loss,
-                gamma=gamma,
-                train_step_counter = self.global_step)
-            agent.initialize()
-            rospy.loginfo("DRL algorithm init: %s", algorithm)
-        elif algorithm == 'DDQN':
-            agent = DdqnAgent(
-                env.time_step_spec(),
-                env.action_spec(),
-                q_network = QNetwork(env.observation_spec(),env.action_spec(),fc_layer_params=fc_layer_params),
-                optimizer = optimizer,
-                n_step_update=n_step_update,
-                td_errors_loss_fn = common.element_wise_squared_loss,
-                gamma=gamma,
-                train_step_counter = self.global_step)
-            agent.initialize()
-            rospy.loginfo("DRL algorithm init: %s", algorithm)
+        # 连续动作的 Actor 网络
+        actor_net = actor_network.ActorNetwork(
+            tf_env.observation_spec(),
+            tf_env.action_spec()['continuous'],
+            fc_layer_params=fc_layer_params)
 
-        elif algorithm == 'DDPG':
+        # 离散动作的 Q 网络
+        q_net = q_network.QNetwork(
+            tf_env.observation_spec(),
+            tf_env.action_spec()['discrete'],
+            fc_layer_params=fc_layer_params)
+
+        # DDPG 代理
+        actor_optimizer = tf.compat.v1.train.AdamOptimizer(learning_rate=1e-4)
+        ddpg = ddpg_agent.DdpgAgent(
+            tf_env.time_step_spec(),
+            tf_env.action_spec()['continuous'],
+            actor_network=actor_net,
+            optimizer=actor_optimizer,
+            target_update_tau=0.05,
+            target_update_period=5)
+
+        # DQN 代理
+        q_optimizer = tf.compat.v1.train.AdamOptimizer(learning_rate)
+        dqn = dqn_agent.DqnAgent(
+            tf_env.time_step_spec(),
+            tf_env.action_spec()['discrete'],
+            q_network=q_net,
+            optimizer=q_optimizer)
+
+        ddpg.initialize()
+        dqn.initialize()    
             
-            actor_net = CustomActorNetwork(env.observation_spec(), env.action_spec())
-            critic_net = CustomCriticNetwork(env.observation_spec(), env.action_spec())
-            
-            agent = ddpg_agent.DdpgAgent(
-                ts.time_step_spec(env.observation_spec()),
-                env.action_spec(),
-                actor_network=actor_net,
-                critic_network=critic_net,
-                actor_optimizer=tf.compat.v1.train.AdamOptimizer(learning_rate=1e-3),
-                critic_optimizer=tf.compat.v1.train.AdamOptimizer(learning_rate=1e-3),
-                ou_stddev=0.2,
-                ou_damping=0.15,
-                target_update_tau=0.05,
-                target_update_period=5,
-                td_errors_loss_fn=tf.math.squared_difference,
-                gamma=0.99,
-                train_step_counter=tf.Variable(0))
+        rospy.loginfo("DRL algorithm init: %s", algorithm)
 
-            agent.initialize()
-            
-            rospy.loginfo("DRL algorithm init: %s", algorithm)
-
-        # elif algorithm == 'C51':
-        #     agent = categorical_dqn_agent.CategoricalDqnAgent(
-        #         env.time_step_spec(),
-        #         env.action_spec(),
-        #         categorical_q_network=categorical_q_network.CategoricalQNetwork(env.observation_spec(),env.action_spec(),num_atoms=num_atoms,fc_layer_params=fc_layer_params),
-        #         optimizer=optimizer,
-        #         min_q_value=min_q_value,
-        #         max_q_value=max_q_value,
-        #         n_step_update=n_step_update,
-        #         td_errors_loss_fn=common.element_wise_squared_loss,
-        #         gamma=gamma,
-        #         train_step_counter=self.global_step)
-        #     agent.initialize()
-        #     rospy.loginfo("DRL algorithm init: %s", algorithm)
-
-        # dqn_agent = DqnAgent(
-        #     env.time_step_spec(),
-        #     env.action_spec(),
-        #     q_network = dqn_network,
-        #     optimizer = optimizer,
-        #     td_errors_loss_fn = common.element_wise_squared_loss,
-        #     train_step_counter = self.global_step)
-
-        # ddqn_agent = DdqnAgent(
-        #     env.time_step_spec(),
-        #     env.action_spec(),
-        #     q_network = ddqn_network,
-        #     optimizer = optimizer,
-        #     td_errors_loss_fn = common.element_wise_squared_loss,
-        #     train_step_counter = self.global_step)
-        return env, agent
+        return tf_env, ddpg, dqn
 
 
-class CustomActorNetwork(actor_distribution_network.ActorDistributionNetwork):
-    def __init__(self, input_tensor_spec, action_spec, fc_layer_params=(100,)):
-        super(CustomActorNetwork, self).__init__(
-            input_tensor_spec,
-            action_spec,
-            fc_layer_params=fc_layer_params,
-            activation_fn=tf.keras.activations.relu)
+# class CustomActorNetwork(actor_distribution_network.ActorDistributionNetwork):
+#     def __init__(self, input_tensor_spec, action_spec, fc_layer_params=(100,)):
+#         super(CustomActorNetwork, self).__init__(
+#             input_tensor_spec,
+#             action_spec,
+#             fc_layer_params=fc_layer_params,
+#             activation_fn=tf.keras.activations.relu)
         
-        # 根据您的动作空间设置不同的输出层
-        # 假设您的动作空间中前两个动作是连续的，其余是离散的
-        num_continuous_actions = 2  # 根据您的环境调整此值
-        num_discrete_actions = sum(spec.maximum - spec.minimum + 1 for spec in tf.nest.flatten(action_spec)[2:])
+#         # 根据您的动作空间设置不同的输出层
+#         # 假设您的动作空间中前两个动作是连续的，其余是离散的
+#         num_continuous_actions = 2  # 根据您的环境调整此值
+#         num_discrete_actions = sum(spec.maximum - spec.minimum + 1 for spec in tf.nest.flatten(action_spec)[2:])
         
-        # 连续动作输出层
-        self._continuous_action_layer = tf.keras.layers.Dense(
-            num_continuous_actions, activation=tf.keras.activations.tanh, name='continuous_actions')
+#         # 连续动作输出层
+#         self._continuous_action_layer = tf.keras.layers.Dense(
+#             num_continuous_actions, activation=tf.keras.activations.tanh, name='continuous_actions')
 
-        # 离散动作输出层
-        self._discrete_action_layer = tf.keras.layers.Dense(
-            num_discrete_actions, activation=None, name='discrete_actions')  # 使用 logits 输出
+#         # 离散动作输出层
+#         self._discrete_action_layer = tf.keras.layers.Dense(
+#             num_discrete_actions, activation=None, name='discrete_actions')  # 使用 logits 输出
 
 
-    def call(self, observations, step_type=None, network_state=(), training=False):
-        # 前向传递
-        state, network_state = super(CustomActorNetwork, self).call(
-            observations,
-            step_type=step_type,
-            network_state=network_state,
-            training=training)
+#     def call(self, observations, step_type=None, network_state=(), training=False):
+#         # 前向传递
+#         state, network_state = super(CustomActorNetwork, self).call(
+#             observations,
+#             step_type=step_type,
+#             network_state=network_state,
+#             training=training)
         
-        continuous_actions = self._continuous_action_layer(state)
-        discrete_actions_logits = self._discrete_action_layer(state)
+#         continuous_actions = self._continuous_action_layer(state)
+#         discrete_actions_logits = self._discrete_action_layer(state)
         
-        return {'continuous_actions': continuous_actions, 'discrete_actions_logits': discrete_actions_logits}, network_state
+#         return {'continuous_actions': continuous_actions, 'discrete_actions_logits': discrete_actions_logits}, network_state
+# class CustomCriticNetwork(tf.keras.layers.Layer):
+#     def __init__(self,
+#                  input_tensor_spec: types.NestedTensorSpec,
+#                  output_tensor_spec: types.TensorSpec,
+#                  fc_layer_params=(100,),
+#                  activation_fn=tf.keras.activations.relu,
+#                  name='CustomCriticNetwork'):
+#         super(CustomCriticNetwork, self).__init__(name=name)
+
+#         # 由于我们有多个输入（观测值和行动），我们需要一个合并层
+#         self._preprocessing_combiner = tf.keras.layers.Concatenate(axis=-1)
+
+#         # 构建一个编码网络来处理输入
+#         self._encoder = encoding_network.EncodingNetwork(
+#             input_tensor_spec=input_tensor_spec,
+#             fc_layer_params=fc_layer_params,
+#             activation_fn=activation_fn,
+#             preprocessing_combiner=self._preprocessing_combiner  # 添加合并层
+#         )
+
+#         # 输出层
+#         self._output_layer = tf.keras.layers.Dense(
+#             1,
+#             activation=None,
+#             kernel_initializer='glorot_uniform')
 
 
-class CustomCriticNetwork(tf.keras.layers.Layer):
-    def __init__(self,
-                 input_tensor_spec: types.NestedTensorSpec,
-                 output_tensor_spec: types.TensorSpec,
-                 fc_layer_params=(100,),
-                 activation_fn=tf.keras.activations.relu,
-                 name='CustomCriticNetwork'):
-        super(CustomCriticNetwork, self).__init__(name=name)
-
-        # 由于我们有多个输入（观测值和行动），我们需要一个合并层
-        self._preprocessing_combiner = tf.keras.layers.Concatenate(axis=-1)
-
-        # 构建一个编码网络来处理输入
-        self._encoder = encoding_network.EncodingNetwork(
-            input_tensor_spec=input_tensor_spec,
-            fc_layer_params=fc_layer_params,
-            activation_fn=activation_fn,
-            preprocessing_combiner=self._preprocessing_combiner  # 添加合并层
-        )
-
-        # 输出层
-        self._output_layer = tf.keras.layers.Dense(
-            1,
-            activation=None,
-            kernel_initializer='glorot_uniform')
-
-
-    def call(self, inputs, step_type=None, network_state=(), training=False):
-        # 将观测值和行动合并在一起
-        # 请确保传递给网络的 inputs 是一个包含两个元素的元组，其中第一个是观测值，第二个是行动
-        state, actions = inputs
-        x = self._preprocessing_combiner([state, actions])
+#     def call(self, inputs, step_type=None, network_state=(), training=False):
+#         # 将观测值和行动合并在一起
+#         # 请确保传递给网络的 inputs 是一个包含两个元素的元组，其中第一个是观测值，第二个是行动
+#         state, actions = inputs
+#         x = self._preprocessing_combiner([state, actions])
         
-        # x = tf.concat([state, actions], -1)
+#         # x = tf.concat([state, actions], -1)
 
-        # 使用编码网络处理输入
-        x, network_state = self._encoder(x, step_type=step_type, network_state=network_state, training=training)
+#         # 使用编码网络处理输入
+#         x, network_state = self._encoder(x, step_type=step_type, network_state=network_state, training=training)
 
-        # 计算最终的输出
-        output = self._output_layer(x)
-        return output, network_state
+#         # 计算最终的输出
+#         output = self._output_layer(x)
+#         return output, network_state
 
 
 class RosTopic:
@@ -346,16 +292,16 @@ class RosTopic:
         # rospy.loginfo("DRL algorithm: %s", self.DRL_algorithm)
 
 class Trainer:
-    def __init__(self, agent, env, model_path):
-        self.agent = agent
+    def __init__(self, ddpg_agent, dqn_agent, env, model_path):
+        if self.use_ddpg():
+            agent = ddpg_agent
+        else:
+            agent = dqn_agent
+        # self.ddpg_agent = ddpg_agent
+        # self.dqn_agent = dqn_agent
         self.env = env
         self.model_path = model_path
-        # TODO: fixed
-        # self.num_iterations = 15000 # @param {type:"integer"}
-        # test
         self.num_iterations = 60000 # @param {type:"integer"}
-        # self.initial_collect_steps = 1000  # @param {type:"integer"}
-        # test
         self.initial_collect_steps = 1000  # @param {type:"integer"}
         self.collect_steps_per_iteration = 1  # @param {type:"integer"}
         self.replay_buffer_capacity = 100000  # @param {type:"integer"}
@@ -363,31 +309,48 @@ class Trainer:
         self.random_policy = random_tf_policy.RandomTFPolicy(self.env.time_step_spec(),
                                                 self.env.action_spec())
 
+        # DDPG Replay Buffer
         self.replay_buffer = tf_uniform_replay_buffer.TFUniformReplayBuffer(
             data_spec=self.agent.collect_data_spec,
             batch_size=self.env.batch_size,
-            max_length=self.replay_buffer_capacity)
-        # add -----
+            max_length=self.replay_buffer_capacity
+        )
+
+        # Collect Driver for both agents
         self.collect_driver = dynamic_step_driver.DynamicStepDriver(
             self.env,
             self.agent.collect_policy,
             observers=[self.replay_buffer.add_batch],
-            num_steps=self.collect_steps_per_iteration)
-        # Initial data collection
+            num_steps=self.collect_steps_per_iteration
+        )
+
         self.collect_driver.run()
+
+        # self.replay_buffer = tf_uniform_replay_buffer.TFUniformReplayBuffer(
+        #     data_spec=self.agent.collect_data_spec, #分ddpg,dqn
+        #     batch_size=self.env.batch_size,
+        #     max_length=self.replay_buffer_capacity)
+        # # add -----
+        # self.collect_driver = dynamic_step_driver.DynamicStepDriver(
+        #     self.env,
+        #     self.agent.collect_policy,              #分ddpg,dqn
+        #     observers=[self.replay_buffer.add_batch],
+        #     num_steps=self.collect_steps_per_iteration)
+        # Initial data collection
+        # self.collect_driver.run()
 
         self.checkpoint_dir = os.path.join(self.model_path, 'checkpoint')
         self.train_checkpointer = common.Checkpointer(
             ckpt_dir=self.checkpoint_dir,
             max_to_keep=1,
-            agent=self.agent,
-            policy=self.agent.policy,
+            agent=self.agent,                       #分ddpg,dqn
+            policy=self.agent.policy,               #分ddpg,dqn
             replay_buffer=self.replay_buffer,
             global_step=self.agent.train_step_counter
         )
         self.train_checkpointer.initialize_or_restore()
         self.policy_dir = os.path.join(self.model_path, 'policy')
-        self.tf_policy_saver = policy_saver.PolicySaver(agent.policy)
+        self.tf_policy_saver = policy_saver.PolicySaver(agent.policy)   #分ddpg,dqn
         # add -----
         self.batch_size = 64  # @param {type:"integer"}
         self.n_step_update = 2  # @param {type:"integer"}
@@ -395,6 +358,21 @@ class Trainer:
         self.log_interval = 200  # @param {type:"integer"}
         self.eval_interval = 1000  # @param {type:"integer"}
         self.checkpoint_interval = 10000
+
+    def use_ddpg(self, action):
+        # 判断是否使用DDPG代理
+        continuous_actions, discrete_actions = action[:2], action[2:]
+         # 如果使用连续动作，则返回 True 使用 DDPG
+        if any(continuous_actions):
+            return True
+        
+        # 如果使用离散动作，则返回 False 使用 DQN
+        if any(discrete_actions):
+            return False
+        
+        # 默认返回 False
+        return False
+   
     def compute_avg_return(self, environment, policy, num_episodes=10):
 
         total_return = 0.0
@@ -428,7 +406,11 @@ class Trainer:
         # self.initial_collect_steps = 2
         # time_step_collect = self.env.reset()
         for _ in range(self.initial_collect_steps):
-            
+
+        #-----------------------------------------------------------------------------------------------------------------------------------  
+            # time_step_collect = self.collect_step(self.env, self.agent.collect_policy, self.replay_buffer)
+        #----------------------------------------------------------------------------------------------------------------------------------- 
+
             time_step_collect = self.collect_step(self.env, self.random_policy)
             rospy.loginfo("initial_collect_steps: %s", _)
             collect_step_reward = time_step_collect.reward.numpy()[0]
@@ -467,8 +449,25 @@ class Trainer:
             for _ in range(self.collect_steps_per_iteration):
                 time_step = self.collect_step(self.env, self.agent.collect_policy)
             
-            # Sample a batch of data from the buffer and update the agent's network.
+            #----------------------------------------------------------------------------------------------------------------------------------- 
+            # if self.use_ddpg():
+            #     ddpg_experience = next(iter(self.ddpg_replay_buffer.as_dataset()))
+            #     self.ddpg__agent.train(ddpg_experience)
+            #     experience = ddpg_experience
+            #     agent = ddpg__agent
+            # # DDPG training
+            # else:
+            # # DQN training
+            #     dqn_experience = next(iter(self.dqn_replay_buffer.as_dataset()))
+            #     self.dqn_agent.train(dqn_experience)
+            #     experience = dqn_experience
+                
+            #----------------------------------------------------------------------------------------------------------------------------------- 
             experience, unused_info = next(iterator)
+
+            # Sample a batch of data from the buffer and update the agent's network.
+            # experience, unused_info = next(iterator)
+
             train_loss = self.agent.train(experience)
             step = self.agent.train_step_counter.numpy()
             tb.add_scalar("/trained-model/Loss_per_frame/", float(train_loss.loss), step)
@@ -920,9 +919,9 @@ if __name__ == "__main__":
             # 訓練
             drl.env.model_select = "train"
             drl.env.point_Workspace_cal_Monte_Carlo()
-            train_env, train_agent = drl.env_agent_config(cfg, ros_topic.DRL_algorithm, seed=1)
+            train_env, ddpg__agent, dqn__agent = drl.env_agent_config(cfg, ros_topic.DRL_algorithm, seed=1)
             # model_path = None
-            train = Trainer(train_agent, train_env, model_path)
+            train = Trainer(ddpg__agent, dqn__agent, train_env, model_path)
             train.train(train_eps = ddqn_train_eps)
             # # # 測試
             # drl.env.model_select = "test"
