@@ -1,5 +1,9 @@
+#!/usr/bin/env python3
+# coding: utf-8
+
 import sys
 import os
+import rospy
 
 curr_path = os.path.dirname(os.path.abspath(__file__))  # 当前文件所在绝对路径
 parent_path = os.path.dirname(curr_path)  # 父路径
