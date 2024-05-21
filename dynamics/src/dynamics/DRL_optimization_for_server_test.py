@@ -80,7 +80,7 @@ import yaml
 import tensorflow as tf
 from tf_agents.agents.dqn import dqn_agent
 from tf_agents.agents.ddpg import ddpg_agent
-from tf_agents.networks import actor_network, q_network
+from tf_agents.networks import q_network
 
 from tf_agents.networks import actor_distribution_network, value_network
 from tf_agents.networks import encoding_network
@@ -145,11 +145,12 @@ class drl_optimization:
         learning_rate = 1e-3  # @param {type:"number"}
         gamma = 0.99
         n_step_update = 2  # @param {type:"integer"}
-
-        tf_env = tf_py_environment.TFPyEnvironment(self.env())
+        
+        train_py_env = suite_gym.wrap_env(self.env)
+        tf_env = tf_py_environment.TFPyEnvironment(train_py_env)
 
         # 连续动作的 Actor 网络
-        actor_net = actor_distribution_network.ActorNetwork(
+        actor_net = actor_distribution_network.ActorDistributionNetwork(
             tf_env.observation_spec(),
             tf_env.action_spec()['continuous'],
             fc_layer_params=fc_layer_params)
