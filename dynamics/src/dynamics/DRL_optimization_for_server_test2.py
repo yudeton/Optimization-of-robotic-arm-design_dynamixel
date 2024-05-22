@@ -83,10 +83,12 @@ from tensorflow.keras.optimizers import Adam
 
 from Prioritized_Replay import Memory
 
-tf.keras.backend.set_floatx('float64')
 
 # add
 import tensorflow as tf
+
+tf.keras.backend.set_floatx('float64')
+
 from tf_agents.agents.dqn.dqn_agent import DqnAgent, DdqnAgent
 from tf_agents.networks.q_network import QNetwork
 from tf_agents.agents.categorical_dqn import categorical_dqn_agent
