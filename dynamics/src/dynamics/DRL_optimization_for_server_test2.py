@@ -394,26 +394,19 @@ class drl_optimization:
     def env_agent_config(self, cfg, algorithm, seed=1):
         ''' 创建环境和智能体
         '''
-        # num_iterations = 15000 # @param {type:"integer"}
-
-        # initial_collect_steps = 1000  # @param {type:"integer"}
-        # collect_steps_per_iteration = 1  # @param {type:"integer"}
-        # replay_buffer_capacity = 100000  # @param {type:"integer"}
-
         fc_layer_params = (100,)
-
-        # batch_size = 64  # @param {type:"integer"}
         learning_rate = 1e-3  # @param {type:"number"}
         gamma = 0.99
-        # log_interval = 200  # @param {type:"integer"}
-
         num_atoms = 51  # @param {type:"integer"}
         min_q_value = -100  # @param {type:"integer"}
         max_q_value = 50  # @param {type:"integer"}
         n_step_update = 2  # @param {type:"integer"}
+        # ddpg plus-----------------------------------------------------------------------------------------------------------------
+        sigma = 0.15
+        tau = 0.125
+        memory_cap = 100000
 
-        # num_eval_episodes = 10  # @param {type:"integer"}
-        # eval_interval = 1000  # @param {type:"integer"}
+        # ddpg plus-----------------------------------------------------------------------------------------------------------------
 
         train_py_env = suite_gym.wrap_env(self.env)
         # eval_py_env = suite_gym.load(self.env)
@@ -436,7 +429,15 @@ class drl_optimization:
             env.observation_spec(),
             env.action_spec(),
             fc_layer_params=fc_layer_params)
+        
+        # ddpg plus-----------------------------------------------------------------------------------------------------------------
 
+
+
+
+
+        # ddpg plus-----------------------------------------------------------------------------------------------------------------
+        
         optimizer = tf.compat.v1.train.AdamOptimizer(learning_rate=learning_rate)
         self.global_step = tf.compat.v1.train.get_or_create_global_step()
 
@@ -481,6 +482,26 @@ class drl_optimization:
             agent.initialize()
             rospy.loginfo("DRL algorithm init: %s", algorithm)
 
+        # ddpg plus-----------------------------------------------------------------------------------------------------------------
+
+        elif algorithm == 'DDPG':
+
+            try:
+                # Ensure action bound is symmetric
+                assert (env.action_space.high == -env.action_space.low)
+                is_discrete = False
+                print('Continuous Action Space')
+            except AttributeError:
+                is_discrete = True
+                print('Discrete Action Space')
+
+            agent = DDPG(env,discrete=is_discrete)
+            agent.initialize()
+            rospy.loginfo("DRL algorithm init: %s", algorithm)
+
+        # ddpg plus-----------------------------------------------------------------------------------------------------------------
+
+        
         # dqn_agent = DqnAgent(
         #     env.time_step_spec(),
         #     env.action_spec(),
@@ -1025,18 +1046,11 @@ if __name__ == "__main__":
         elif op_function_flag == "case2_real":
             op_function_flag = "case2"
             from RobotOptEnv_dynamixel_v2_real import RobotOptEnv, RobotOptEnv_3dof, RobotOptEnv_5dof
+        elif op_function_flag == "case2_real_test":
+            op_function_flag = "case2"
+            from RobotOptEnv_dynamixel_v2_real_note import RobotOptEnv
         if ros_topic.arm_structure_dof == 6:
             drl.env = RobotOptEnv()
-            rospy.loginfo('arm_structure_dof: {}'.format(ros_topic.arm_structure_dof))
-            arm_structure_dof = ros_topic.arm_structure_dof
-            ros_topic.arm_structure_dof = 0
-        elif ros_topic.arm_structure_dof == 3:
-            drl.env = RobotOptEnv_3dof()
-            rospy.loginfo('arm_structure_dof: {}'.format(ros_topic.arm_structure_dof))
-            arm_structure_dof = ros_topic.arm_structure_dof
-            ros_topic.arm_structure_dof = 0
-        elif ros_topic.arm_structure_dof == 5:
-            drl.env = RobotOptEnv_5dof()
             rospy.loginfo('arm_structure_dof: {}'.format(ros_topic.arm_structure_dof))
             arm_structure_dof = ros_topic.arm_structure_dof
             ros_topic.arm_structure_dof = 0
@@ -1093,7 +1107,41 @@ if __name__ == "__main__":
         input_text = input("Enter some next: ")
         rospy.loginfo("Input text: %s" % input_text)
         
-        
+        if ros_topic.cmd_run == 10:
+            tb = tensorboardX.SummaryWriter()
+            ros_topic.cmd_run = 0
+
+            
+            if ros_topic.DRL_algorithm == 'DQN':
+                model_path = curr_path + '/train_results' + '/DQN_outputs/' + op_function_flag + '/' +str(arm_structure_dof) + \
+                '/' + str(ros_topic.DRL_algorithm) + '-' + str(arm_structure_dof) + '-' +str(drl.env.action_select) + '-' + curr_time + '/models/'  # 保存模型的路径
+            elif ros_topic.DRL_algorithm == 'DDQN':
+                model_path = curr_path + '/train_results' + '/DDQN_outputs/' + op_function_flag + '/' + str(arm_structure_dof) + \
+                '/' + str(ros_topic.DRL_algorithm) + '-' + str(arm_structure_dof) + '-' +str(drl.env.action_select) + '-' + curr_time + '/models/'  # 保存模型的路径
+            elif ros_topic.DRL_algorithm == 'C51':
+                model_path = curr_path + '/train_results' + '/C51_outputs/' + op_function_flag + '/' + str(arm_structure_dof) + \
+                '/' + str(ros_topic.DRL_algorithm) + '-' + str(arm_structure_dof) + '-' +str(drl.env.action_select) + '-' + curr_time + '/models/'  # 保存模型的路径
+            elif ros_topic.DRL_algorithm == 'DDPG':
+                model_path = curr_path + '/train_results' + '/DDPG_outputs/' + op_function_flag + '/' + str(arm_structure_dof) + \
+                '/' + str(ros_topic.DRL_algorithm) + '-' + str(arm_structure_dof) + '-' +str(drl.env.action_select) + '-' + curr_time + '/models/'  # 保存模型的路径
+
+            # 訓練
+            drl.env.model_select = "train"
+            drl.env.point_Workspace_cal_Monte_Carlo()
+            train_env, train_agent = drl.env_agent_config(cfg, ros_topic.DRL_algorithm, seed=1)
+            # model_path = None
+            train = Trainer(train_agent, train_env, model_path)
+            train.train(train_eps = ddqn_train_eps)
+            # # # 測試
+            # drl.env.model_select = "test"
+            # # save_result_path = curr_path + '/test_results' + '/C51_outputs/' + op_function_flag + '/' + str(arm_structure_dof) + \
+            # #     '/' + curr_time   # 保存結果的路径
+            # # plot_cfg.model_path = plot_cfg.model_path +'model_last.pkl'
+            # # model_path = model_path + 'policy_step' + str(policy_num) +  '/' # 選擇模型的路径
+            # test_env, test_agent = drl.env_agent_config(cfg, ros_topic.DRL_algorithm, seed=10)
+            # test = Tester(test_env, model_path, drl.env, num_episodes = 200) # 20230309  change 300-> 200
+            # test.test()
+            break
 
 
         if ros_topic.cmd_run == 1:
