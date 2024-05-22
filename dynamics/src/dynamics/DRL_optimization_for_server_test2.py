@@ -165,7 +165,221 @@ def update_target_weights(model, target_model, tau=0.005):
         target_weights[i] = weights[i] * tau + target_weights[i] * (1 - tau)
     target_model.set_weights(target_weights)
 
+class OrnsteinUhlenbeckNoise:
+    def __init__(self, mu, sigma=0.2, theta=.15, dt=1e-2, x0=None):
+        self.theta = theta
+        self.mu = mu
+        self.sigma = sigma
+        self.dt = dt
+        self.x0 = x0
+        self.reset()
 
+    def __call__(self):
+        x = self.x_prev + self.theta * (self.mu - self.x_prev) * self.dt + self.sigma * np.sqrt(self.dt) * np.random.normal(size=self.mu.shape)
+        self.x_prev = x
+        return x
+
+    def reset(self):
+        self.x_prev = self.x0 if self.x0 is not None else np.zeros_like(self.mu)
+
+
+class NormalNoise:
+    def __init__(self, mu, sigma=0.15):
+        self.mu = mu
+        self.sigma = sigma
+
+    def __call__(self):
+        return np.random.normal(scale=self.sigma, size=self.mu.shape)
+
+    def reset(self):
+        pass
+
+
+class DDPG:
+    def __init__(
+            self,
+            env,
+            discrete=False,
+            use_priority=False,
+            lr_actor=1e-5,
+            lr_critic=1e-3,
+            actor_units=(24, 16),
+            critic_units=(24, 16),
+            noise='norm',
+            sigma=0.15,
+            tau=0.125,
+            gamma=0.85,
+            batch_size=64,
+            memory_cap=100000
+    ):
+        self.env = env
+        self.state_shape = env.observation_space.shape  # shape of observations
+        self.action_dim = env.action_space.n if discrete else env.action_space.shape[0]  # number of actions
+        self.discrete = discrete
+        self.action_bound = (env.action_space.high - env.action_space.low) / 2 if not discrete else 1.
+        self.action_shift = (env.action_space.high + env.action_space.low) / 2 if not discrete else 0.
+        self.use_priority = use_priority
+        self.memory = Memory(capacity=memory_cap) if use_priority else deque(maxlen=memory_cap)
+        if noise == 'ou':
+            self.noise = OrnsteinUhlenbeckNoise(mu=np.zeros(self.action_dim), sigma=sigma)
+        else:
+            self.noise = NormalNoise(mu=np.zeros(self.action_dim), sigma=sigma)
+
+        # Define and initialize Actor network
+        self.actor = actor(self.state_shape, self.action_dim, self.action_bound, self.action_shift, actor_units)
+        self.actor_target = actor(self.state_shape, self.action_dim, self.action_bound, self.action_shift, actor_units)
+        self.actor_optimizer = Adam(learning_rate=lr_actor)
+        update_target_weights(self.actor, self.actor_target, tau=1.)
+
+        # Define and initialize Critic network
+        self.critic = critic(self.state_shape, self.action_dim, critic_units)
+        self.critic_target = critic(self.state_shape, self.action_dim, critic_units)
+        self.critic_optimizer = Adam(learning_rate=lr_critic)
+        update_target_weights(self.critic, self.critic_target, tau=1.)
+
+        # Set hyperparameters
+        self.gamma = gamma  # discount factor
+        self.tau = tau  # target model update
+        self.batch_size = batch_size
+
+        # Tensorboard
+        self.summaries = {}
+
+    def act(self, state, add_noise=True):
+        state = np.expand_dims(state, axis=0).astype(np.float32)
+        a = self.actor.predict(state)
+        a += self.noise() * add_noise * self.action_bound
+        a = tf.clip_by_value(a, -self.action_bound + self.action_shift, self.action_bound + self.action_shift)
+
+        self.summaries['q_val'] = self.critic.predict([state, a])[0][0]
+
+        return a
+
+    def save_model(self, a_fn, c_fn):
+        self.actor.save(a_fn)
+        self.critic.save(c_fn)
+
+    def load_actor(self, a_fn):
+        self.actor.load_weights(a_fn)
+        self.actor_target.load_weights(a_fn)
+        print(self.actor.summary())
+
+    def load_critic(self, c_fn):
+        self.critic.load_weights(c_fn)
+        self.critic_target.load_weights(c_fn)
+        print(self.critic.summary())
+
+    def remember(self, state, action, reward, next_state, done):
+        if self.use_priority:
+            action = np.squeeze(action)
+            transition = np.hstack([state, action, reward, next_state, done])
+            self.memory.store(transition)
+        else:
+            state = np.expand_dims(state, axis=0)
+            next_state = np.expand_dims(next_state, axis=0)
+            self.memory.append([state, action, reward, next_state, done])
+
+    def replay(self):
+        if len(self.memory) < self.batch_size:
+            return
+
+        if self.use_priority:
+            tree_idx, samples, ISWeights = self.memory.sample(self.batch_size)
+            split_shape = np.cumsum([self.state_shape[0], self.action_dim, 1, self.state_shape[0]])
+            states, actions, rewards, next_states, dones = np.hsplit(samples, split_shape)
+        else:
+            ISWeights = 1.0
+            samples = random.sample(self.memory, self.batch_size)
+            s = np.array(samples).T
+            states, actions, rewards, next_states, dones = [np.vstack(s[i, :]).astype(np.float) for i in range(5)]
+
+        next_actions = self.actor_target.predict(next_states)
+        q_future = self.critic_target.predict([next_states, next_actions])
+        target_qs = rewards + q_future * self.gamma * (1. - dones)
+
+        # train critic
+        with tf.GradientTape() as tape:
+            q_values = self.critic([states, actions])
+            td_error = q_values - target_qs
+            critic_loss = tf.reduce_mean(ISWeights * tf.math.square(td_error))
+
+        critic_grad = tape.gradient(critic_loss, self.critic.trainable_variables)  # compute critic gradient
+        self.critic_optimizer.apply_gradients(zip(critic_grad, self.critic.trainable_variables))
+
+        # update priority
+        if self.use_priority:
+            abs_errors = tf.reduce_sum(tf.abs(td_error), axis=1)
+            self.memory.batch_update(tree_idx, abs_errors)
+
+        # train actor
+        with tf.GradientTape() as tape:
+            actions = self.actor(states)
+            actor_loss = -tf.reduce_mean(self.critic([states, actions]))
+
+        actor_grad = tape.gradient(actor_loss, self.actor.trainable_variables)  # compute actor gradient
+        self.actor_optimizer.apply_gradients(zip(actor_grad, self.actor.trainable_variables))
+
+        # tensorboard info
+        self.summaries['critic_loss'] = critic_loss
+        self.summaries['actor_loss'] = actor_loss
+
+    def train(self, max_episodes=50, max_epochs=8000, max_steps=500, save_freq=50):
+        current_time = datetime.datetime.now().strftime("%Y%m%d-%H%M%S")
+        train_log_dir = 'logs/DDPG_basic_' + current_time
+        summary_writer = tf.summary.create_file_writer(train_log_dir)
+
+        done, episode, steps, epoch, total_reward = False, 0, 0, 0, 0
+        cur_state = self.env.reset()
+        while episode < max_episodes or epoch < max_epochs:
+            if done:
+                episode += 1
+                print("episode {}: {} total reward, {} steps, {} epochs".format(
+                    episode, total_reward, steps, epoch))
+
+                with summary_writer.as_default():
+                    tf.summary.scalar('Main/episode_reward', total_reward, step=episode)
+                    tf.summary.scalar('Main/episode_steps', steps, step=episode)
+
+                summary_writer.flush()
+                self.noise.reset()
+
+                if steps >= max_steps:
+                    print("episode {}, reached max steps".format(episode))
+                    self.save_model("ddpg_actor_episode{}.h5".format(episode),
+                                    "ddpg_critic_episode{}.h5".format(episode))
+
+                done, cur_state, steps, total_reward = False, self.env.reset(), 0, 0
+                if episode % save_freq == 0:
+                    self.save_model("ddpg_actor_episode{}.h5".format(episode),
+                                    "ddpg_critic_episode{}.h5".format(episode))
+
+            a = self.act(cur_state)  # model determine action given state
+            action = np.argmax(a) if self.discrete else a[0]  # post process for discrete action space
+            next_state, reward, done, _ = self.env.step(action)  # perform action on env
+
+            self.remember(cur_state, a, reward, next_state, done)  # add to memory
+            self.replay()  # train models through memory replay
+
+            update_target_weights(self.actor, self.actor_target, tau=self.tau)  # iterates target model
+            update_target_weights(self.critic, self.critic_target, tau=self.tau)
+
+            cur_state = next_state
+            total_reward += reward
+            steps += 1
+            epoch += 1
+
+            # Tensorboard update
+            with summary_writer.as_default():
+                if len(self.memory) > self.batch_size:
+                    tf.summary.scalar('Loss/actor_loss', self.summaries['actor_loss'], step=epoch)
+                    tf.summary.scalar('Loss/critic_loss', self.summaries['critic_loss'], step=epoch)
+                tf.summary.scalar('Main/step_reward', reward, step=epoch)
+                tf.summary.scalar('Stats/q_val', self.summaries['q_val'], step=epoch)
+
+            summary_writer.flush()
+
+        self.save_model("ddpg_actor_final_episode{}.h5".format(episode),
+                        "ddpg_critic_final_episode{}.h5".format(episode))
 
 #ddpg plus-------------------------------------------------------------------------------------------------------------------------------------
 
