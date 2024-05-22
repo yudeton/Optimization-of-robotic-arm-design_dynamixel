@@ -414,21 +414,21 @@ class drl_optimization:
         env = tf_py_environment.TFPyEnvironment(train_py_env)
         # eval_env = tf_py_environment.TFPyEnvironment(eval_py_env)
 
-        categorical_q_net = categorical_q_network.CategoricalQNetwork(
-            env.observation_spec(),
-            env.action_spec(),
-            num_atoms=num_atoms,
-            fc_layer_params=fc_layer_params)
+        # categorical_q_net = categorical_q_network.CategoricalQNetwork(
+        #     env.observation_spec(),
+        #     env.action_spec(),
+        #     num_atoms=num_atoms,
+        #     fc_layer_params=fc_layer_params)
 
-        dqn_network = QNetwork(
-            env.observation_spec(),
-            env.action_spec(),
-            fc_layer_params=fc_layer_params)
+        # dqn_network = QNetwork(
+        #     env.observation_spec(),
+        #     env.action_spec(),
+        #     fc_layer_params=fc_layer_params)
 
-        ddqn_network = QNetwork(
-            env.observation_spec(),
-            env.action_spec(),
-            fc_layer_params=fc_layer_params)
+        # ddqn_network = QNetwork(
+        #     env.observation_spec(),
+        #     env.action_spec(),
+        #     fc_layer_params=fc_layer_params)
         
         # ddpg plus-----------------------------------------------------------------------------------------------------------------
 
@@ -443,48 +443,48 @@ class drl_optimization:
 
         # train_step_counter = tf.Variable(0)
         # agent = DDQNAgent(self.config)  # 创建智能体
-        if algorithm == 'DQN':
-            agent = DqnAgent(
-                env.time_step_spec(),
-                env.action_spec(),
-                q_network = dqn_network,
-                optimizer = optimizer,
-                n_step_update=n_step_update,
-                td_errors_loss_fn = common.element_wise_squared_loss,
-                gamma=gamma,
-                train_step_counter = self.global_step)
-            agent.initialize()
-            rospy.loginfo("DRL algorithm init: %s", algorithm)
-        elif algorithm == 'DDQN':
-            agent = DdqnAgent(
-                env.time_step_spec(),
-                env.action_spec(),
-                q_network = ddqn_network,
-                optimizer = optimizer,
-                n_step_update=n_step_update,
-                td_errors_loss_fn = common.element_wise_squared_loss,
-                gamma=gamma,
-                train_step_counter = self.global_step)
-            agent.initialize()
-            rospy.loginfo("DRL algorithm init: %s", algorithm)
-        elif algorithm == 'C51':
-            agent = categorical_dqn_agent.CategoricalDqnAgent(
-                env.time_step_spec(),
-                env.action_spec(),
-                categorical_q_network=categorical_q_net,
-                optimizer=optimizer,
-                min_q_value=min_q_value,
-                max_q_value=max_q_value,
-                n_step_update=n_step_update,
-                td_errors_loss_fn=common.element_wise_squared_loss,
-                gamma=gamma,
-                train_step_counter=self.global_step)
-            agent.initialize()
-            rospy.loginfo("DRL algorithm init: %s", algorithm)
+        # if algorithm == 'DQN':
+        #     agent = DqnAgent(
+        #         env.time_step_spec(),
+        #         env.action_spec(),
+        #         q_network = dqn_network,
+        #         optimizer = optimizer,
+        #         n_step_update=n_step_update,
+        #         td_errors_loss_fn = common.element_wise_squared_loss,
+        #         gamma=gamma,
+        #         train_step_counter = self.global_step)
+        #     agent.initialize()
+        #     rospy.loginfo("DRL algorithm init: %s", algorithm)
+        # elif algorithm == 'DDQN':
+        #     agent = DdqnAgent(
+        #         env.time_step_spec(),
+        #         env.action_spec(),
+        #         q_network = ddqn_network,
+        #         optimizer = optimizer,
+        #         n_step_update=n_step_update,
+        #         td_errors_loss_fn = common.element_wise_squared_loss,
+        #         gamma=gamma,
+        #         train_step_counter = self.global_step)
+        #     agent.initialize()
+        #     rospy.loginfo("DRL algorithm init: %s", algorithm)
+        # elif algorithm == 'C51':
+        #     agent = categorical_dqn_agent.CategoricalDqnAgent(
+        #         env.time_step_spec(),
+        #         env.action_spec(),
+        #         categorical_q_network=categorical_q_net,
+        #         optimizer=optimizer,
+        #         min_q_value=min_q_value,
+        #         max_q_value=max_q_value,
+        #         n_step_update=n_step_update,
+        #         td_errors_loss_fn=common.element_wise_squared_loss,
+        #         gamma=gamma,
+        #         train_step_counter=self.global_step)
+        #     agent.initialize()
+        #     rospy.loginfo("DRL algorithm init: %s", algorithm)
 
         # ddpg plus-----------------------------------------------------------------------------------------------------------------
 
-        elif algorithm == 'DDPG':
+        if algorithm == 'DDPG':
 
             try:
                 # Ensure action bound is symmetric
@@ -787,7 +787,8 @@ class Tester(object):
             rospy.loginfo("================================")
             for j in range(len(state.numpy()[0])):
                 sheet.cell(row=i+1, column=j+1).value = state.numpy()[0][j] # state record 
-            # self.motor_rated[1], self.motor_rated[2]] record
+            # self.motor_rated[1], self.motor_rated[2]] record            train_env, train_agent = drl.env_agent_config(cfg, ros_topic.DRL_algorithm, seed=1)
+
             sheet.cell(row=i+1, column=len(state.numpy()[0])+4).value = self.drl_env_class.motor_type_axis_2
             sheet.cell(row=i+1, column=len(state.numpy()[0])+5).value = self.drl_env_class.motor_type_axis_3
             
