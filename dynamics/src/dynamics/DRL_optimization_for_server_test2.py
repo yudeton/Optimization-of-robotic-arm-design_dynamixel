@@ -1129,20 +1129,20 @@ if __name__ == "__main__":
             # 訓練
             drl.env.model_select = "train"
             drl.env.point_Workspace_cal_Monte_Carlo()
-            train_env, train_agent = drl.env_agent_config(cfg, ros_topic.DRL_algorithm, seed=1)
+            # train_env, train_agent = drl.env_agent_config(cfg, ros_topic.DRL_algorithm, seed=1)
             # model_path = None
 
             # ddpg plus------------------------------------------------------
             try:
                 # Ensure action bound is symmetric
-                assert (train_env.action_space.high == -train_env.action_space.low)
+                assert (drl.env.action_space.high == -drl.env.action_space.low)
                 is_discrete = False
                 print('Continuous Action Space')
             except AttributeError:
                 is_discrete = True
                 print('Discrete Action Space')
             
-            ddpg = DDPG(train_env, discrete=is_discrete)
+            ddpg = DDPG(drl.env, discrete=is_discrete)
             ddpg.train(max_episodes=1000)
             # ddpg plus------------------------------------------------------
 
