@@ -125,6 +125,10 @@ class RobotOptEnv(gym.Env):
         
         # TODO: ddpg space _NEW
         continuous_action_space = spaces.Box(low=-1.0, high=1.0, shape=(1,), dtype=np.float64)
+        
+      #  discrete_action_spaces = [spaces.Discrete(6) for _ in range(6)]
+      #  action_spaces = [continuous_action_space] + discrete_action_spaces
+
         discrete_action_space_count = 6
         action_spaces = [
             continuous_action_space if i < 2 else spaces.Discrete(discrete_action_space_count)
@@ -187,6 +191,8 @@ class RobotOptEnv(gym.Env):
 
     # TODO: fixed
     def step(self, action):
+        print("Action Space:", self.action_space)
+        print("Action attempted:", action, type(action))
         assert self.action_space.contains(action), "%r (%s) invalid"%(action, type(action))
         if self.action_select == 'variable2':    #單獨調整連桿長度或選擇馬達
             

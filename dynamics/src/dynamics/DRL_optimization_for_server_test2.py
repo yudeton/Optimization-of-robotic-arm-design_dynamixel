@@ -63,6 +63,7 @@ import gym
 import torch
 import datetime
 import numpy as np
+from gym import spaces
 from common.utils import save_results, make_dir
 from common.utils import plot_rewards
 from dqn import DQN
@@ -214,7 +215,8 @@ class DDPG:
     ):
         self.env = env
         self.state_shape = env.observation_space.shape  # shape of observations
-        self.action_dim = env.action_space.n if discrete else env.action_space.shape[0]  # number of actions
+        # self.action_dim = env.action_space.n if discrete else env.action_space.shape[0]  # number of actions
+        self.action_dim = DDPG.calculate_action_dimensions(env.action_space)
         self.discrete = discrete
         self.action_bound = (env.action_space.high - env.action_space.low) / 2 if not discrete else 1.
         self.action_shift = (env.action_space.high + env.action_space.low) / 2 if not discrete else 0.
@@ -244,6 +246,21 @@ class DDPG:
 
         # Tensorboard
         self.summaries = {}
+    
+    def calculate_action_dimensions(action_space):
+        action_dim = 0
+        for space in action_space.spaces:
+            if isinstance(space, spaces.Discrete):
+                # 离散动作的维度增加1（因为每个离散动作通常表示为一个独立的维度）
+                action_dim += 1
+            elif isinstance(space, spaces.Box):
+                # 连续动作的维度为Box空间的形状总和
+                action_dim += space.shape[0]
+            elif isinstance(space, spaces.Tuple):
+                # 如果子空间仍然是Tuple，递归调用
+                action_dim += calculate_action_dimensions(space)
+            # 其他类型的空间可以继续添加处理逻辑
+        return action_dim
 
     def act(self, state, add_noise=True):
         state = np.expand_dims(state, axis=0).astype(np.float32)
