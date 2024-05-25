@@ -72,7 +72,7 @@ import random
 
 import matplotlib.pyplot as plt
 # from RobotOptEnv_dynamixel import RobotOptEnv, RobotOptEnv_3dof, RobotOptEnv_5dof
-from RobotOptEnv_dynamixel_v2 import RobotOptEnv, RobotOptEnv_3dof, RobotOptEnv_5dof
+from RobotOptEnv_dynamixel_v2_real_pdqn import RobotOptEnv
 import tensorboardX
 import yaml
 
@@ -93,6 +93,10 @@ from tf_agents.trajectories import trajectory
 from tf_agents.utils import common
 from tf_agents.policies import policy_saver # add
 from tf_agents.policies import py_tf_eager_policy # add
+
+# dpqn
+from tensorflow.keras import layers, Model
+
 # add
 import io
 import os
@@ -117,7 +121,200 @@ tb = None
 algo_name = "C51"  # 算法名称
 env_name = 'C51_RobotOptEnv'  # 环境名称
 
+#-----------dpqn-----------
 
+#Q網路和參數網路
+class QNet(Model):
+    def __init__(self, input_dim, action_dim):
+        super(QNet, self).__init__()
+        self.fc1 = layers.Dense(256, activation='relu')
+        self.fc2 = layers.Dense(128, activation='relu')
+        self.fc3 = layers.Dense(64, activation='relu')
+        self.out = layers.Dense(action_dim)
+
+    def call(self, x):
+        x = self.fc1(x)
+        x = self.fc2(x)
+        x = self.fc3(x)
+        return self.out(x)
+
+class ParamNet(Model):
+    def __init__(self, input_dim, param_dim):
+        super(ParamNet, self).__init__()
+        self.fc1 = layers.Dense(256, activation='relu')
+        self.fc2 = layers.Dense(128, activation='relu')
+        self.fc3 = layers.Dense(64, activation='relu')
+        self.out = layers.Dense(param_dim, activation='tanh')
+
+    def call(self, x):
+        x = self.fc1(x)
+        x = self.fc2(x)
+        x = self.fc3(x)
+        return self.out(x)
+    
+#定义一个经验回放缓冲区来存储状态转移
+class ReplayBuffer:
+    def __init__(self, max_size, input_shape, n_actions, n_params):
+        self.mem_size = max_size
+        self.mem_cntr = 0
+        self.state_memory = np.zeros((self.mem_size, *input_shape), dtype=np.float32)
+        self.new_state_memory = np.zeros((self.mem_size, *input_shape), dtype=np.float32)
+        self.action_memory = np.zeros(self.mem_size, dtype=np.int32)
+        self.param_memory = np.zeros((self.mem_size, n_params), dtype=np.float32)
+        self.reward_memory = np.zeros(self.mem_size, dtype=np.float32)
+        self.terminal_memory = np.zeros(self.mem_size, dtype=np.bool)
+
+    def store_transition(self, state, action, params, reward, state_):
+        index = self.mem_cntr % self.mem_size
+        self.state_memory[index] = state
+        self.new_state_memory[index] = state_
+        self.action_memory[index] = action
+        self.param_memory[index] = params
+        self.reward_memory[index] = reward
+        self.terminal_memory[index] = 0
+
+        self.mem_cntr += 1
+
+    def sample_buffer(self, batch_size):
+        max_mem = min(self.mem_cntr, self.mem_size)
+        batch = np.random.choice(max_mem, batch_size, replace=False)
+
+        states = self.state_memory[batch]
+        states_ = self.new_state_memory[batch]
+        rewards = self.reward_memory[batch]
+        actions = self.action_memory[batch]
+        params = self.param_memory[batch]
+        terminals = self.terminal_memory[batch]
+
+        return states, actions, params, rewards, states_
+#定义 PDQN 代理，包括选择动作和学习过程
+class PDQNAgent:
+    def __init__(self, state_dim, action_dim, param_dim, buffer_size=50000, batch_size=64, gamma=0.99, lr_q=0.001, lr_p=0.001, log_dir=None):
+        self.state_dim = state_dim
+        self.action_dim = action_dim
+        self.param_dim = param_dim
+        self.buffer = ReplayBuffer(buffer_size, (state_dim,), action_dim, param_dim)
+        self.batch_size = batch_size
+        self.gamma = gamma
+
+        self.q_net = QNet(state_dim + param_dim, action_dim)
+        self.target_q_net = QNet(state_dim + param_dim, action_dim)
+        self.param_net = ParamNet(state_dim, param_dim)
+
+        self.optimizer_q = tf.keras.optimizers.Adam(learning_rate=lr_q)
+        self.optimizer_p = tf.keras.optimizers.Adam(learning_rate=lr_p)
+        
+        self.update_target_network()
+
+        if log_dir:
+            self.summary_writer = tf.summary.create_file_writer(log_dir)
+
+
+    def update_target_network(self):
+        self.target_q_net.set_weights(self.q_net.get_weights())
+
+    def choose_action(self, state, epsilon):
+        if np.random.random() < epsilon:
+            action = np.random.choice(self.action_dim)
+            params = np.random.uniform(-1, 1, self.param_dim)
+        else:
+            state = tf.convert_to_tensor([state], dtype=tf.float32)
+            params = self.param_net(state)
+            q_input = tf.concat([state, params], axis=1)
+            q_values = self.q_net(q_input)
+            action = tf.argmax(q_values[0]).numpy()
+            params = params.numpy()[0]
+        return action, params
+
+    def store_transition(self, state, action, params, reward, state_):
+        self.buffer.store_transition(state, action, params, reward, state_)
+
+    def learn(self):
+        if self.buffer.mem_cntr < self.batch_size:
+            return None, None
+
+        states, actions, params, rewards, states_ = self.buffer.sample_buffer(self.batch_size)
+        states = tf.convert_to_tensor(states, dtype=tf.float32)
+        states_ = tf.convert_to_tensor(states_, dtype=tf.float32)
+        rewards = tf.convert_to_tensor(rewards, dtype=tf.float32)
+
+        with tf.GradientTape() as tape:
+            params_ = self.param_net(states_)
+            q_next = self.target_q_net(tf.concat([states_, params_], axis=1))
+            q_next = tf.reduce_max(q_next, axis=1)
+            q_target = rewards + self.gamma * q_next
+            q_target = tf.reshape(q_target, (self.batch_size, 1))
+
+            actions_onehot = tf.one_hot(actions, self.action_dim)
+            q_eval = self.q_net(tf.concat([states, params], axis=1))
+            q_eval = tf.reduce_sum(q_eval * actions_onehot, axis=1, keepdims=True)
+
+            loss_q = tf.keras.losses.MSE(q_target, q_eval)
+
+        grads = tape.gradient(loss_q, self.q_net.trainable_variables)
+        self.optimizer_q.apply_gradients(zip(grads, self.q_net.trainable_variables))
+
+        with tf.GradientTape() as tape:
+            x_all = self.param_net(states)
+            q_all = self.q_net(tf.concat([states, x_all], axis=1))
+            loss_p = -tf.reduce_mean(tf.reduce_sum(q_all, axis=1))
+
+        grads = tape.gradient(loss_p, self.param_net.trainable_variables)
+        self.optimizer_p.apply_gradients(zip(grads, self.param_net.trainable_variables))
+
+        self.update_target_network()
+
+        return loss_q.numpy(), loss_p.numpy()
+
+    def save_model(self, episode):
+        model_dir = f"models/episode_{episode}"
+        if not os.path.exists(model_dir):
+            os.makedirs(model_dir)
+        self.q_net.save_weights(os.path.join(model_dir, 'q_net.h5'))
+        self.param_net.save_weights(os.path.join(model_dir, 'param_net.h5'))
+
+#訓練過程
+
+def train_pdqn(agent, env, episodes=20000, epsilon_start=1.0, epsilon_end=0.1, epsilon_decay=0.995, save_interval=10000):
+    epsilon = epsilon_start
+    for episode in range(episodes):
+        state = env.reset()
+        done = False
+        total_reward = 0
+        step_count = 0
+
+        while not done:
+            action, params = agent.choose_action(state, epsilon)
+            next_state, reward, done = env.step(action, params)
+            agent.store_transition(state, action, params, reward, next_state)
+            loss_q, loss_p = agent.learn(episode)
+            state = next_state
+            total_reward += reward
+            step_count += 1
+
+        epsilon = max(epsilon_end, epsilon * epsilon_decay)
+
+        print(f'Episode: {episode}, Total Reward: {total_reward}, Steps: {step_count}, Epsilon: {epsilon:.3f}, Q Loss: {loss_q}, Param Loss: {loss_p}')
+
+        with agent.summary_writer.as_default():
+            tf.summary.scalar('Episode_Return', total_reward, step=episode)
+            if loss_q is not None and loss_p is not None:
+                tf.summary.scalar('Loss/Q_loss', loss_q, step=episode)
+                tf.summary.scalar('Loss/Param_loss', loss_p, step=episode)
+            agent.summary_writer.flush()
+
+        if episode % save_interval == 0:
+            agent.save_model(episode)
+
+# 初始化环境和代理
+# env = SimpleEnv()
+# agent = PDQNAgent(env.state_dim, env.action_dim, env.param_dim)
+
+# 训练 PDQN 代理
+# train_pdqn(agent, env)
+
+
+#-----------dpqn-----------
 
 class drl_optimization:
     def __init__(self):
@@ -760,6 +957,9 @@ if __name__ == "__main__":
         elif op_function_flag == "case2_real":
             op_function_flag = "case2"
             from RobotOptEnv_dynamixel_v2_real import RobotOptEnv, RobotOptEnv_3dof, RobotOptEnv_5dof
+        elif op_function_flag == "case2_real_pdqn":
+            op_function_flag = "case2"
+            from RobotOptEnv_dynamixel_v2_real import RobotOptEnv
         if ros_topic.arm_structure_dof == 6:
             drl.env = RobotOptEnv()
             rospy.loginfo('arm_structure_dof: {}'.format(ros_topic.arm_structure_dof))
@@ -828,7 +1028,37 @@ if __name__ == "__main__":
         input_text = input("Enter some next: ")
         rospy.loginfo("Input text: %s" % input_text)
         
-        
+        if ros_topic.cmd_run == 5:
+            tb = tensorboardX.SummaryWriter()
+            ros_topic.cmd_run = 0
+            if ros_topic.DRL_algorithm == 'DQN':
+                model_path = curr_path + '/train_results' + '/DQN_outputs/' + op_function_flag + '/' +str(arm_structure_dof) + \
+                '/' + str(ros_topic.DRL_algorithm) + '-' + str(arm_structure_dof) + '-' +str(drl.env.action_select) + '-' + curr_time + '/models/'  # 保存模型的路径
+            elif ros_topic.DRL_algorithm == 'DDQN':
+                model_path = curr_path + '/train_results' + '/DDQN_outputs/' + op_function_flag + '/' + str(arm_structure_dof) + \
+                '/' + str(ros_topic.DRL_algorithm) + '-' + str(arm_structure_dof) + '-' +str(drl.env.action_select) + '-' + curr_time + '/models/'  # 保存模型的路径
+            elif ros_topic.DRL_algorithm == 'C51':
+                model_path = curr_path + '/train_results' + '/C51_outputs/' + op_function_flag + '/' + str(arm_structure_dof) + \
+                '/' + str(ros_topic.DRL_algorithm) + '-' + str(arm_structure_dof) + '-' +str(drl.env.action_select) + '-' + curr_time + '/models/'  # 保存模型的路径
+            elif ros_topic.DRL_algorithm == 'PDQN':
+                model_path = curr_path + '/train_results' + '/C51_outputs/' + op_function_flag + '/' + str(arm_structure_dof) + \
+                '/' + str(ros_topic.DRL_algorithm) + '-' + str(arm_structure_dof) + '-' +str(drl.env.action_select) + '-' + curr_time + '/models/'  # 保存模型的路径
+
+            # 訓練
+            drl.env.model_select = "train"
+            drl.env.point_Workspace_cal_Monte_Carlo()
+            # train_env, train_agent = drl.env_agent_config(cfg, ros_topic.DRL_algorithm, seed=1)
+            # # model_path = None
+            # train = Trainer(train_agent, train_env, model_path)
+            # train.train(train_eps = ddqn_train_eps)
+            # # # 測試
+            env = RobotOptEnv()
+            log_dir = os.path.join("logs", datetime.datetime.now().strftime("%Y%m%d-%H%M%S"))
+            agent = PDQNAgent(env.state_dim, env.action_dim, env.param_dim, log_dir=log_dir)
+
+            # 训练 PDQN 代理
+            train_pdqn(agent, env)
+            break
 
 
         if ros_topic.cmd_run == 1:

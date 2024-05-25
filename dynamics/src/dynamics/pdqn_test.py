@@ -1,17 +1,57 @@
 import tensorflow as tf
 from tensorflow.keras import layers, Model
 from tensorflow.keras.callbacks import TensorBoard
+import gym
+from gym import spaces
 import numpy as np
 import os
 import datetime
 
 
-class SimpleEnv:
+class MotorEnv:
     def __init__(self):
-        self.state_dim = 58     # 狀態空間維度
-        self.action_dim = 6     # 離散動作空間維度
-        self.param_dim = 2      # 每個離散動作的連續參數維度
-        self.max_steps = 100    # 每個 episode 的最大步數
+        super(MotorEnv, self).__init__()  # 调用父类的构造函数
+
+        # self.state_dim = 58     # 狀態空間維度
+        # self.action_dim = 6     # 離散動作空間維度
+        # self.param_dim = 2      # 每個離散動作的連續參數維度
+        # self.max_steps = 100    # 每個 episode 的最大步數
+
+        # 定义状态空间的边界值
+        self.low_torque_over = -1.0
+        self.high_torque_over = 1.0
+        self.low_power_consumption = -1.0
+        self.high_power_consumption = 1.0
+        self.low_reach_eva = -1.0
+        self.high_reach_eva = 1.0
+        self.low_manipulability = -1.0
+        self.high_manipulability = 1.0
+        self.low_std_L2 = -1.0
+        self.high_std_L2 = 1.0
+        self.low_std_L3 = -1.0
+        self.high_std_L3 = 1.0
+        self.low_torque_cost = -1.0
+        self.high_torque_cost = 1.0
+
+        # 定义状态空间
+        self.observation_space = spaces.Box(
+            low=np.array([self.low_torque_over, self.low_power_consumption, self.low_reach_eva, self.low_manipulability, self.low_std_L2, self.low_std_L3, self.low_torque_cost]),
+            high=np.array([self.high_torque_over, self.high_power_consumption, self.high_reach_eva, self.high_manipulability, self.high_std_L2, self.high_std_L3, self.high_torque_cost]),
+            dtype=np.float64
+        )
+
+        # 定义动作空间：6个离散动作，每个动作有2个连续参数
+        self.action_space = spaces.Tuple((
+            spaces.Discrete(6),
+            spaces.Box(low=-1.0, high=1.0, shape=(2,), dtype=np.float64)
+        ))
+
+        # 定义额外的属性
+        self.state_dim = self.observation_space.shape[0]  # 状态空间维度
+        self.action_dim = self.action_space.spaces[0].n  # 离散动作空间维度
+        self.param_dim = self.action_space.spaces[1].shape[0]  # 每个离散动作的连续参数维度
+        self.max_steps = 100  # 每个 episode 的最大步数
+
 
     def reset(self):
         """
@@ -35,6 +75,12 @@ class SimpleEnv:
         """
         根据动作和参数计算奖励。
         """
+        
+
+
+
+
+
         # 简化的奖励计算示例，实际情况根据具体任务定义
         reward = -np.sum(params**2)  # 假设连续参数的平方和越小奖励越高
         return reward
@@ -100,7 +146,7 @@ class ReplayBuffer:
         params = self.param_memory[batch]
         terminals = self.terminal_memory[batch]
 
-         return states, actions, params, rewards, states_
+        return states, actions, params, rewards, states_
 
 class PDQNAgent:
     def __init__(self, state_dim, action_dim, param_dim, buffer_size=50000, batch_size=64, gamma=0.99, lr_q=0.001, lr_p=0.001, log_dir='./logs'):
@@ -122,6 +168,14 @@ class PDQNAgent:
         
         self.log_dir = log_dir
         self.summary_writer = tf.summary.create_file_writer(log_dir)
+
+       # Set up checkpointing
+        self.checkpoint_dir = './checkpoints'
+        self.checkpoint_prefix = os.path.join(self.checkpoint_dir, "ckpt")
+        self.checkpoint = tf.train.Checkpoint(optimizer_q=self.optimizer_q,
+                                              optimizer_p=self.optimizer_p,
+                                              q_net=self.q_net,
+                                              param_net=self.param_net)
 
     def update_target_network(self):
         self.target_q_net.set_weights(self.q_net.get_weights())
@@ -180,6 +234,7 @@ class PDQNAgent:
         loss_q_mean = tf.reduce_mean(loss_q)
         loss_p_mean = tf.reduce_mean(loss_p)
 
+        # 紀錄loss到TensorBoard
         with self.summary_writer.as_default():
             tf.summary.scalar('Loss/Q_loss', loss_q_mean.numpy(), step=episode)
             tf.summary.scalar('Loss/Param_loss', loss_p_mean.numpy(), step=episode)
@@ -187,7 +242,30 @@ class PDQNAgent:
         
         return loss_q_mean.numpy(), loss_p_mean.numpy()
 
-def train_pdqn(agent, env, episodes=20000, epsilon_start=1.0, epsilon_end=0.1, epsilon_decay=0.995, save_interval=5000):
+    def save_model(self, episode):
+        if not os.path.exists(self.checkpoint_dir):
+            os.makedirs(self.checkpoint_dir)
+        self.checkpoint.save(file_prefix=self.checkpoint_prefix)
+
+        # Save model in SavedModel format
+        if not os.path.exists('saved_models'):
+            os.makedirs('saved_models')
+        q_net_path = f'saved_models/q_net_{episode}'
+        param_net_path = f'saved_models/param_net_{episode}'
+        tf.saved_model.save(self.q_net, q_net_path)
+        tf.saved_model.save(self.param_net, param_net_path)
+
+    def load_model(self, checkpoint_path):
+        self.checkpoint.restore(checkpoint_path)
+
+        # Restore SavedModel
+        latest_q_net = tf.train.latest_checkpoint('saved_models')
+        latest_param_net = tf.train.latest_checkpoint('saved_models')
+        self.q_net = tf.saved_model.load(latest_q_net)
+        self.param_net = tf.saved_model.load(latest_param_net)
+
+
+def train_pdqn(agent, env, episodes=20000, epsilon_start=1.0, epsilon_end=0.1, epsilon_decay=0.995, save_interval=10000):
     epsilon = epsilon_start
     for episode in range(episodes):
         state = env.reset()
@@ -214,10 +292,12 @@ def train_pdqn(agent, env, episodes=20000, epsilon_start=1.0, epsilon_end=0.1, e
 
         # 定期保存模型
         if episode % save_interval == 0:
-            if not os.path.exists('models'):
-                os.makedirs('models')
-            agent.q_net.save_weights(f'models/q_net_{episode}.h5')
-            agent.param_net.save_weights(f'models/param_net_{episode}.h5')
+            agent.save_model(episode)
+        # if episode % save_interval == 0:
+        #     if not os.path.exists('models'):
+        #         os.makedirs('models')
+        #     agent.q_net.save_weights(f'models/q_net_{episode}.h5')
+        #     agent.param_net.save_weights(f'models/param_net_{episode}.h5')
 
 # 初始化环境和代理
 env = SimpleEnv()
