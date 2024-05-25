@@ -454,8 +454,8 @@ class RobotOptEnv(gym.Env):
             if self.state[2] == 1 and self.reachable_tmp == 1:      #最好狀況(現在和上一刻可達性都等於1)
                 shaping = (
                             # - self.state[6]/5 # 馬達扭矩成本
-                            - L3_def/1500
-                            - L2_def/1500
+                            - L3_def/1300
+                            - L2_def/1300
                             - self.state[1]/5 # 功耗
                             + 2000 * self.state[3] # 可操作性
                         ) 
@@ -465,8 +465,8 @@ class RobotOptEnv(gym.Env):
             elif self.state[2] == 1 and self.reachable_tmp != 1:    #現在可達＝1,但上一刻不等於1
                 tmp_shaping = (
                             # - self.state[6]/5  # 馬達扭矩成本
-                            - L3_def/1500
-                            - L2_def/1500
+                            - L3_def/1300
+                            - L2_def/1300
                             - self.state[1]/5 # 功耗
                             + 2000 * self.state[3] # 可操作性
                         ) 
@@ -501,7 +501,7 @@ class RobotOptEnv(gym.Env):
             #L2長<=5 or L3長<=5 or L2長>=40 or L3長>=40
             if self.state[4] <= self.MIN_LENGTH or self.state[5] <= self.MIN_LENGTH  or self.state[4] >= self.MAX_LENGTH or self.state[5] >= self.MAX_LENGTH:
                 terminated = True       #終止
-                reward += -200          #獎勵-200
+                reward += -100          #獎勵-200
             percent = 100 - self.state[2] * 100     #差多少趴可達性到一
             reward += -percent                      #差越多趴懲罰越多            
             # rati o_score = self.state[0]
@@ -525,16 +525,16 @@ class RobotOptEnv(gym.Env):
                 # reward -= ratio_score * 3
                 # reward -= torque_score * 3
                 if torque_score == 0:
-                    reward += 50
+                    reward += 150
                     if L2_def < self.prev_L2_def:
-                        reward += 30
+                        reward += 20
                     self.prev_L2_def = L2_def
                     if L3_def < self.prev_L3_def:
-                        reward += 30
+                        reward += 20
                     self.prev_L3_def = L3_def
                     for x in range(6):
                         if self.torque_sum_list[x] == self.state[6]: #x越大代表馬達越小，獎勵越多
-                            reward += x * 10
+                            reward += x * 40
                     # terminated = True
                     # self.counts = 0
         

@@ -602,7 +602,7 @@ class ReTrainer:
         # FIXME: retrain init -----
         # Load the saved policy
         if retrain_path != None:
-            saved_policy_path = os.path.join(self.retrain_path, 'policy')
+            saved_policy_path = os.path.join(self.retrain_path)
             saved_policy = tf.saved_model.load(saved_policy_path)
             self.tf_policy_saver = saved_policy
             # TODO:
@@ -892,7 +892,7 @@ if __name__ == "__main__":
                 model_path = curr_path + '/train_results' + '/DQN_outputs/' + op_function_flag + '/' +str(arm_structure_dof) + \
                 '/' + str(ros_topic.DRL_algorithm) + '-' + str(arm_structure_dof) + '-' +str(drl.env.action_select) + '-' + curr_time + '/models/'  # 保存模型的路径
                 select_path = curr_path + '/train_results' + '/DQN_outputs/' + op_function_flag + '/' + str(arm_structure_dof) + \
-                '/' + str(ros_topic.test_model_name) + '/models/'   # 選擇模型的路径            
+                '/' + str(ros_topic.test_model_name) + '/models/' + 'policy/policy_step50000'   # 選擇模型的路径            
             elif ros_topic.DRL_algorithm == 'DDQN':
                 model_path = curr_path + '/train_results' + '/DDQN_outputs/' + op_function_flag + '/' + str(arm_structure_dof) + \
                 '/' + str(ros_topic.DRL_algorithm) + '-' + str(arm_structure_dof) + '-' +str(drl.env.action_select) + '-' + curr_time + '/models/'  # 保存模型的路径
