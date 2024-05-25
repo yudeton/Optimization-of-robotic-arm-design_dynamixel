@@ -49,6 +49,7 @@ class RobotOptEnv(gym.Env):
         self.robot_urdf = stl_conv_urdf("single_arm_v22_19cm","test")
         # self.robot_urdf.init_dynamixel_diff_inertia()
         # callback:Enter the parameters of the algorithm to be optimized on the interface
+        self.counts = 0
         self.sub_optimal_design = rospy.Subscriber(
             "/optimal_design", optimal_design, self.optimal_design_callback
         )
@@ -276,7 +277,7 @@ class RobotOptEnv(gym.Env):
                         ) 
                 self.prev_shaping = tmp_shaping
                 reward = 0
-                # self.prev_shaping = tmp_shaping
+                
             else:
                 shaping = (
                             + 2000 * self.state[3] # 可操作性
@@ -364,15 +365,17 @@ class RobotOptEnv(gym.Env):
                 consumption = 2000
             self.prev_shaping = None
             self.reachable_tmp = 0
+            self.state = np.array([torque_over, np.abs(consumption), reach_score, manipulability_score, self.std_L2, self.std_L3, self.motor_type_axis_2 + self.motor_type_axis_3], dtype=np.float64)
+
             # self.state[0] = ratio_over
-            self.state[0] = torque_over
-            self.state[1] = np.abs(consumption)
-            self.state[2] = reach_score
-            self.state[3] = manipulability_score
-            self.state[4] = self.std_L2
-            self.state[5] = self.std_L3
-            self.state[6] = self.motor_type_axis_2 + self.motor_type_axis_3
-            self.counts = 0
+            #self.state[0] = torque_over
+            #self.state[1] = np.abs(consumption)
+            #self.state[2] = reach_score
+            #self.state[3] = manipulability_score
+            #self.state[4] = self.std_L2
+            #self.state[5] = self.std_L3
+            #self.state[6] = self.motor_type_axis_2 + self.motor_type_axis_3
+            #self.counts = 0
             return self.state
         elif self.model_select == "test":
             # random state (手臂長度隨機)

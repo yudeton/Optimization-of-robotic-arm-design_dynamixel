@@ -285,9 +285,9 @@ def train_pdqn(agent, env, episodes=20000, epsilon_start=1.0, epsilon_end=0.1, e
 
         while not done:
             action, params = agent.choose_action(state, epsilon)
-            next_state, reward, done = env.step(action, params)
+            next_state, reward, done, _ = env.step((action, params))
             agent.store_transition(state, action, params, reward, next_state)
-            loss_q, loss_p = agent.learn(episode)
+            loss_q, loss_p = agent.learn()
             state = next_state
             total_reward += reward
             step_count += 1
@@ -959,7 +959,7 @@ if __name__ == "__main__":
             from RobotOptEnv_dynamixel_v2_real import RobotOptEnv, RobotOptEnv_3dof, RobotOptEnv_5dof
         elif op_function_flag == "case2_real_pdqn":
             op_function_flag = "case2"
-            from RobotOptEnv_dynamixel_v2_real import RobotOptEnv
+            from RobotOptEnv_dynamixel_v2_real_pdqn import RobotOptEnv
         if ros_topic.arm_structure_dof == 6:
             drl.env = RobotOptEnv()
             rospy.loginfo('arm_structure_dof: {}'.format(ros_topic.arm_structure_dof))
