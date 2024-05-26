@@ -300,9 +300,8 @@ class RobotOptEnv(gym.Env):
             rospy.loginfo("-------------------------")
             rospy.loginfo("shaping reward: %s", reward)
 
-            terminated = self.terminated
             if self.state[4] <= self.MIN_LENGTH or self.state[5] <= self.MIN_LENGTH  or self.state[4] >= self.MAX_LENGTH or self.state[5] >= self.MAX_LENGTH:
-                terminated = True
+                self.terminated = True
                 reward += -200
             percent = 100 - self.state[2] * 100
             reward += -percent
@@ -326,14 +325,14 @@ class RobotOptEnv(gym.Env):
     
         # TODO: train case end
         if self.counts == 50: # max_steps
-            terminated = True
+            self.terminated = True
             self.counts = 0
         
         self.ratio_over = False
         self.torque_over = False #reset
        
         current_design = [self.std_L2, self.std_L3, self.motor_rated[1], self.motor_rated[2]]
-        return self.state, reward, terminated, current_design
+        return self.state, reward, self.terminated, current_design
     # reset环境状态 
     def reset(self):
         if self.model_select == "train":
@@ -467,9 +466,9 @@ class RobotOptEnv(gym.Env):
         origin_return = [torque_over, consumption, reach_score, manipulability_score, std_L2, std_L3, motor_type_axis_2, motor_type_axis_3]
         return origin_return
     # 視覺化呈現，它只會回應出呼叫那一刻的畫面給你，要它持續出現，需要寫個迴圈
-    @property
+    
     def current_time_step(self):
-        return self.state, terminated
+        return ts.restart(self.state)
     
     def render(self, mode='human'):
         return None
@@ -853,14 +852,16 @@ class RobotOptEnv(gym.Env):
             dtype=np.int32,
             name='step_type'
         )
+        
+        discount_spec = array_spec.ArraySpec(
+            shape=(),
+            dtype=np.float32,
+            name='discount'
+        )
         return ts.TimeStep(
             step_type=step_type_spec,
             reward=reward_spec,
-            discount=array_spec.ArraySpec(
-                shape=(),
-                dtype=np.float32,
-                name='discount'
-            ),
+            discount=discount_spec,
             observation=observation_spec
         )
     def action_spec(self):
