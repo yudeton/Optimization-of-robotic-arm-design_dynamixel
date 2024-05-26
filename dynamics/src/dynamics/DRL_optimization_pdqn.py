@@ -248,8 +248,9 @@ class PDQNAgent:
             actions_onehot = tf.one_hot(actions, self.action_dim)
             q_eval = self.q_net(tf.concat([states, params], axis=1))
             q_eval = tf.reduce_sum(q_eval * actions_onehot, axis=1, keepdims=True)
-
-            loss_q = tf.keras.losses.MSE(q_target, q_eval)
+            
+            loss_q = tf.reduce_mean(tf.keras.losses.MSE(q_target, q_eval))
+            #loss_q = tf.keras.losses.MSE(q_target, q_eval)
 
         grads = tape.gradient(loss_q, self.q_net.trainable_variables)
         self.optimizer_q.apply_gradients(zip(grads, self.q_net.trainable_variables))
