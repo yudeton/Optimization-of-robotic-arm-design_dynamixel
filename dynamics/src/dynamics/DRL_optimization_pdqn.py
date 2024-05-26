@@ -275,6 +275,137 @@ class PDQNAgent:
         self.param_net.save_weights(os.path.join(model_dir, 'param_net.h5'))
 
 #訓練過程
+class PDQNTrainer:
+    def __init__(self, agent, env, model_path):
+        self.agent = agent
+        self.env = env
+        self.model_path = model_path
+        self.num_iterations = 60000
+        self.initial_collect_steps = 1000
+        self.collect_steps_per_iteration = 1
+        self.replay_buffer_capacity = 100000
+
+        self.random_policy = random_tf_policy.RandomTFPolicy(self.env.time_step_spec(), self.env.action_spec())
+
+        self.replay_buffer = tf_uniform_replay_buffer.TFUniformReplayBuffer(
+            data_spec=self.agent.collect_data_spec,
+            batch_size=self.env.batch_size,
+            max_length=self.replay_buffer_capacity
+        )
+
+        self.collect_driver = dynamic_step_driver.DynamicStepDriver(
+            self.env,
+            self.agent.collect_policy,
+            observers=[self.replay_buffer.add_batch],
+            num_steps=self.collect_steps_per_iteration
+        )
+        
+        self.collect_driver.run()
+
+        self.checkpoint_dir = os.path.join(self.model_path, 'checkpoint')
+        self.train_checkpointer = common.Checkpointer(
+            ckpt_dir=self.checkpoint_dir,
+            max_to_keep=1,
+            agent=self.agent,
+            policy=self.agent.policy,
+            replay_buffer=self.replay_buffer,
+            global_step=self.agent.train_step_counter
+        )
+        self.train_checkpointer.initialize_or_restore()
+        self.policy_dir = os.path.join(self.model_path, 'policy')
+        self.tf_policy_saver = policy_saver.PolicySaver(self.agent.policy)
+        
+        self.batch_size = 64
+        self.n_step_update = 2
+        self.num_eval_episodes = 10
+        self.log_interval = 200
+        self.eval_interval = 1000
+        self.checkpoint_interval = 10000
+
+    def compute_avg_return(self, environment, policy, num_episodes=10):
+        total_return = 0.0
+        for _ in range(num_episodes):
+            time_step = environment.reset()
+            episode_return = 0.0
+            while not time_step.is_last():
+                action_step = policy.action(time_step)
+                time_step = environment.step(action_step.action)
+                episode_return += time_step.reward
+            total_return += episode_return
+        avg_return = total_return / num_episodes
+        return avg_return.numpy()[0]
+
+    def collect_step(self, environment, policy):
+        time_step = environment.current_time_step()
+        action_step = policy.action(time_step)
+        next_time_step = environment.step(action_step.action)
+        traj = trajectory.from_transition(time_step, action_step, next_time_step)
+        self.replay_buffer.add_batch(traj)
+        return next_time_step
+
+    def train(self, pre_fr=0, train_eps=300):
+        rospy.loginfo("-------------數據採集------------")
+        for _ in range(self.initial_collect_steps):
+            time_step_collect = self.collect_step(self.env, self.random_policy)
+            rospy.loginfo("initial_collect_steps: %s", _)
+            collect_step_reward = time_step_collect.reward.numpy()[0]
+            collect_step_state = time_step_collect.observation.numpy()[0]
+            rospy.loginfo("collect_step_reward: %s", collect_step_reward)
+            rospy.loginfo("collect_step_state: %s", collect_step_state)
+
+            if time_step_collect.is_last():
+                time_step_collect = self.env.reset()
+
+        dataset = self.replay_buffer.as_dataset(
+            num_parallel_calls=3, sample_batch_size=self.batch_size,
+            num_steps=self.n_step_update + 1).prefetch(3)
+
+        iterator = iter(dataset)
+        self.agent.train = common.function(self.agent.train)
+        self.agent.train_step_counter.assign(0)
+        rospy.loginfo("Evaluate the agent's policy once before training.")
+
+        rospy.loginfo("-------------Train Start------------")
+        episode_return = 0.0
+
+        for _ in range(self.num_iterations):
+            for _ in range(self.collect_steps_per_iteration):
+                time_step = self.collect_step(self.env, self.agent.collect_policy)
+
+            experience, unused_info = next(iterator)
+            train_loss = self.agent.train(experience)
+            step = self.agent.train_step_counter.numpy()
+            tb.add_scalar("/trained-model/Loss_per_frame/", float(train_loss.loss), step)
+            step_reward = time_step.reward.numpy()[0]
+            step_state = time_step.observation.numpy()[0]
+            
+            tb.add_scalar("/trained-model/train_step_reward/", step_reward, step)
+            episode_return += step_reward
+            rospy.loginfo("step_reward: %s", step_reward)
+            rospy.loginfo("step_state: %s", step_state)
+            rospy.loginfo("step: %s", step)
+            rospy.loginfo("train_loss: %s", float(train_loss.loss))
+            rospy.loginfo("================================")
+            if time_step.is_last():
+                time_step = self.env.reset()
+                rospy.loginfo("episode_return: %s", episode_return)
+                rospy.loginfo("------episode end.-----------")
+                tb.add_scalar("/trained-model/Episode_Return/", episode_return, step)
+                episode_return = 0.0
+
+            if step % self.log_interval == 0:
+                print('step = {0}: loss = {1}'.format(step, train_loss.loss))
+                tb.add_scalar("/trained-model/loss_log/",  float(train_loss.loss), step)
+
+            if step % self.checkpoint_interval == 0:
+                filename = 'policy_step{}'.format(self.agent.train_step_counter.numpy())
+                self.train_checkpointer.save(self.agent.train_step_counter)
+                self.tf_policy_saver.save(self.policy_dir + '/' + filename)
+
+        self.train_checkpointer.save(self.agent.train_step_counter)
+        self.train_checkpointer.initialize_or_restore()
+        self.agent.global_step = tf.compat.v1.train.get_global_step()
+        self.tf_policy_saver.save(self.policy_dir)
 
 def train_pdqn(agent, env, episodes=20000, epsilon_start=1.0, epsilon_end=0.1, epsilon_decay=0.995, save_interval=10000):
     epsilon = epsilon_start
@@ -946,33 +1077,11 @@ if __name__ == "__main__":
     # train = Trainer()
     while not rospy.is_shutdown():
         # test all
-        if op_function_flag == "case1":
-            from RobotOptEnv_dynamixel import RobotOptEnv, RobotOptEnv_3dof, RobotOptEnv_5dof
-        elif op_function_flag == "case2":
-            from RobotOptEnv_dynamixel_v2 import RobotOptEnv, RobotOptEnv_3dof, RobotOptEnv_5dof
-        elif op_function_flag == "case3":
-            from RobotOptEnv_dynamixel_v3_motion import RobotOptEnv, RobotOptEnv_3dof, RobotOptEnv_5dof
-        elif op_function_flag == "case1_real":
-            op_function_flag = "case1"
-            from RobotOptEnv_dynamixel_real import RobotOptEnv, RobotOptEnv_3dof, RobotOptEnv_5dof
-        elif op_function_flag == "case2_real":
-            op_function_flag = "case2"
-            from RobotOptEnv_dynamixel_v2_real import RobotOptEnv, RobotOptEnv_3dof, RobotOptEnv_5dof
-        elif op_function_flag == "case2_real_pdqn":
+        if op_function_flag == "case2_real_pdqn":
             op_function_flag = "case2"
             from RobotOptEnv_dynamixel_v2_real_pdqn import RobotOptEnv
         if ros_topic.arm_structure_dof == 6:
             drl.env = RobotOptEnv()
-            rospy.loginfo('arm_structure_dof: {}'.format(ros_topic.arm_structure_dof))
-            arm_structure_dof = ros_topic.arm_structure_dof
-            ros_topic.arm_structure_dof = 0
-        elif ros_topic.arm_structure_dof == 3:
-            drl.env = RobotOptEnv_3dof()
-            rospy.loginfo('arm_structure_dof: {}'.format(ros_topic.arm_structure_dof))
-            arm_structure_dof = ros_topic.arm_structure_dof
-            ros_topic.arm_structure_dof = 0
-        elif ros_topic.arm_structure_dof == 5:
-            drl.env = RobotOptEnv_5dof()
             rospy.loginfo('arm_structure_dof: {}'.format(ros_topic.arm_structure_dof))
             arm_structure_dof = ros_topic.arm_structure_dof
             ros_topic.arm_structure_dof = 0
@@ -1032,19 +1141,9 @@ if __name__ == "__main__":
         if ros_topic.cmd_run == 5:
             tb = tensorboardX.SummaryWriter()
             ros_topic.cmd_run = 0
-            if ros_topic.DRL_algorithm == 'DQN':
-                model_path = curr_path + '/train_results' + '/DQN_outputs/' + op_function_flag + '/' +str(arm_structure_dof) + \
+            model_path = curr_path + '/train_results' + '/PDQN_outputs/' + op_function_flag + '/' + str(arm_structure_dof) + \
                 '/' + str(ros_topic.DRL_algorithm) + '-' + str(arm_structure_dof) + '-' +str(drl.env.action_select) + '-' + curr_time + '/models/'  # 保存模型的路径
-            elif ros_topic.DRL_algorithm == 'DDQN':
-                model_path = curr_path + '/train_results' + '/DDQN_outputs/' + op_function_flag + '/' + str(arm_structure_dof) + \
-                '/' + str(ros_topic.DRL_algorithm) + '-' + str(arm_structure_dof) + '-' +str(drl.env.action_select) + '-' + curr_time + '/models/'  # 保存模型的路径
-            elif ros_topic.DRL_algorithm == 'C51':
-                model_path = curr_path + '/train_results' + '/C51_outputs/' + op_function_flag + '/' + str(arm_structure_dof) + \
-                '/' + str(ros_topic.DRL_algorithm) + '-' + str(arm_structure_dof) + '-' +str(drl.env.action_select) + '-' + curr_time + '/models/'  # 保存模型的路径
-            elif ros_topic.DRL_algorithm == 'PDQN':
-                model_path = curr_path + '/train_results' + '/C51_outputs/' + op_function_flag + '/' + str(arm_structure_dof) + \
-                '/' + str(ros_topic.DRL_algorithm) + '-' + str(arm_structure_dof) + '-' +str(drl.env.action_select) + '-' + curr_time + '/models/'  # 保存模型的路径
-
+            log_dir = os.path.join("PDQN_logs", datetime.datetime.now().strftime("%Y%m%d-%H%M%S"))
             # 訓練
             drl.env.model_select = "train"
             drl.env.point_Workspace_cal_Monte_Carlo()
@@ -1054,11 +1153,10 @@ if __name__ == "__main__":
             # train.train(train_eps = ddqn_train_eps)
             # # # 測試
             env = RobotOptEnv()
-            log_dir = os.path.join("logs", datetime.datetime.now().strftime("%Y%m%d-%H%M%S"))
             agent = PDQNAgent(env.state_dim, env.action_dim, env.param_dim, log_dir=log_dir)
-
+            trainer = PDQNTrainer(agent, env, model_path)
+            trainer.train(train_eps=ddqn_train_eps)
             # 训练 PDQN 代理
-            train_pdqn(agent, env)
             break
 
 
