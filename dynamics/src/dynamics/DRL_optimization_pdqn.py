@@ -134,29 +134,29 @@ env_name = 'C51_RobotOptEnv'  # 环境名称
 class QNet(Model):
     def __init__(self, input_dim, action_dim):
         super(QNet, self).__init__()
-        self.fc1 = layers.Dense(256, activation='relu')
+        #self.fc1 = layers.Dense(256, activation='relu')
         self.fc2 = layers.Dense(128, activation='relu')
-        self.fc3 = layers.Dense(64, activation='relu')
+        #self.fc3 = layers.Dense(64, activation='relu')
         self.out = layers.Dense(action_dim)
 
     def call(self, x):
-        x = self.fc1(x)
+        #x = self.fc1(x)
         x = self.fc2(x)
-        x = self.fc3(x)
+        #x = self.fc3(x)
         return self.out(x)
 
 class ParamNet(Model):
     def __init__(self, input_dim, param_dim):
         super(ParamNet, self).__init__()
-        self.fc1 = layers.Dense(256, activation='relu')
+        #self.fc1 = layers.Dense(256, activation='relu')
         self.fc2 = layers.Dense(128, activation='relu')
-        self.fc3 = layers.Dense(64, activation='relu')
+        #self.fc3 = layers.Dense(64, activation='relu')
         self.out = layers.Dense(param_dim, activation='tanh')
 
     def call(self, x):
-        x = self.fc1(x)
+        #x = self.fc1(x)
         x = self.fc2(x)
-        x = self.fc3(x)
+        #x = self.fc3(x)
         return self.out(x)
     
 #定义一个经验回放缓冲区来存储状态转移
@@ -311,7 +311,22 @@ class PDQNAgent:
 
 #訓練過程
 
-def train_pdqn(agent, env, model_path, episodes=20000, epsilon_start=1.0, epsilon_end=0.1, epsilon_decay=0.995, save_interval=10000):
+def train_pdqn(agent, env, model_path, episodes=20000, epsilon_start=1.0, epsilon_end=0.1, epsilon_decay=0.995, save_interval=10000, initial_collect_steps=1000):
+    #--------------------------------------+++++++++
+    # 初始数据采集
+    for _ in range(initial_collect_steps):
+        state = env.reset()
+        done = False
+        while not done:
+            # 使用隨機策略進行初始數據採集
+            action = np.random.choice(agent.action_dim)
+            params = np.random.uniform(-1, 1, agent.param_dim)
+            next_state, reward, done, _ = env.step((action, params))
+            agent.store_transition(state, action, params, reward, next_state)
+            state = next_state
+    
+    #--------------------------------------------------++++++
+
     epsilon = epsilon_start
     for episode in range(episodes):     #訓練的總迭代次數
         state = env.reset()
@@ -341,7 +356,10 @@ def train_pdqn(agent, env, model_path, episodes=20000, epsilon_start=1.0, epsilo
 
         if episode % save_interval == 0:
             agent.save_model(episode)   # 设置模型保存路径和检查点
+#+++++++++++++++++++++++++
 
+
+#++++++++++++++++++++++++++        
 
 #-----------dpqn-----------
 
