@@ -276,7 +276,7 @@ class PDQNAgent:
 
 #訓練過程
 
-def train_pdqn(agent, env, episodes=20000, epsilon_start=1.0, epsilon_end=0.1, epsilon_decay=0.995, save_interval=10000):
+def train_pdqn(agent, env, model_path, episodes=20000, epsilon_start=1.0, epsilon_end=0.1, epsilon_decay=0.995, save_interval=10000):
     epsilon = epsilon_start
     for episode in range(episodes):
         state = env.reset()
@@ -307,52 +307,31 @@ def train_pdqn(agent, env, episodes=20000, epsilon_start=1.0, epsilon_end=0.1, e
         if episode % save_interval == 0:
             agent.save_model(episode)
 
-# 初始化环境和代理
-# env = SimpleEnv()
-# agent = PDQNAgent(env.state_dim, env.action_dim, env.param_dim)
-
-# 训练 PDQN 代理
-# train_pdqn(agent, env)
-
 
 #-----------dpqn-----------
 
 class drl_optimization:
     def __init__(self):
-        # self.test = 0
+        # 初始化機器人和環境
         self.robot = modular_robot_6dof()
         self.env = RobotOptEnv()
-        # self.config = Config()
 
     def env_agent_config(self, cfg, algorithm, seed=1):
-        ''' 创建环境和智能体
-        '''
-        # num_iterations = 15000 # @param {type:"integer"}
+        ''' 创建环境和智能体'''
 
-        # initial_collect_steps = 1000  # @param {type:"integer"}
-        # collect_steps_per_iteration = 1  # @param {type:"integer"}
-        # replay_buffer_capacity = 100000  # @param {type:"integer"}
-
+        # 设置神经网络的层参数
         fc_layer_params = (100,)
+        learning_rate = 1e-3    # 學習率
+        gamma = 0.99            # 折扣因子
+        num_atoms = 51          # @param {type:"integer"}
+        min_q_value = -100      # @param {type:"integer"}
+        max_q_value = 50        # @param {type:"integer"}
+        n_step_update = 2       # N步更新
 
-        # batch_size = 64  # @param {type:"integer"}
-        learning_rate = 1e-3  # @param {type:"number"}
-        gamma = 0.99
-        # log_interval = 200  # @param {type:"integer"}
-
-        num_atoms = 51  # @param {type:"integer"}
-        min_q_value = -100  # @param {type:"integer"}
-        max_q_value = 50  # @param {type:"integer"}
-        n_step_update = 2  # @param {type:"integer"}
-
-        # num_eval_episodes = 10  # @param {type:"integer"}
-        # eval_interval = 1000  # @param {type:"integer"}
-
+        # 包裝環境
+            # 將gym環境包成TensorFlow兼容的環境
         train_py_env = suite_gym.wrap_env(self.env)
-        # eval_py_env = suite_gym.load(self.env)
-
         env = tf_py_environment.TFPyEnvironment(train_py_env)
-        # eval_env = tf_py_environment.TFPyEnvironment(eval_py_env)
 
         categorical_q_net = categorical_q_network.CategoricalQNetwork(
             env.observation_spec(),
@@ -370,11 +349,11 @@ class drl_optimization:
             env.action_spec(),
             fc_layer_params=fc_layer_params)
 
+        # 配置優化器
         optimizer = tf.compat.v1.train.AdamOptimizer(learning_rate=learning_rate)
         self.global_step = tf.compat.v1.train.get_or_create_global_step()
 
-        # train_step_counter = tf.Variable(0)
-        # agent = DDQNAgent(self.config)  # 创建智能体
+        # 根据指定的算法初始化智能体
         if algorithm == 'DQN':
             agent = DqnAgent(
                 env.time_step_spec(),
@@ -414,38 +393,8 @@ class drl_optimization:
             agent.initialize()
             rospy.loginfo("DRL algorithm init: %s", algorithm)
 
-        # dqn_agent = DqnAgent(
-        #     env.time_step_spec(),
-        #     env.action_spec(),
-        #     q_network = dqn_network,
-        #     optimizer = optimizer,
-        #     td_errors_loss_fn = common.element_wise_squared_loss,
-        #     train_step_counter = self.global_step)
-
-        # ddqn_agent = DdqnAgent(
-        #     env.time_step_spec(),
-        #     env.action_spec(),
-        #     q_network = ddqn_network,
-        #     optimizer = optimizer,
-        #     td_errors_loss_fn = common.element_wise_squared_loss,
-        #     train_step_counter = self.global_step)
+        # 返回環境和智能體
         return env, agent
-
-
-# class PlotConfig:
-#     ''' 绘图相关参数设置
-#     '''
-
-#     def __init__(self) -> None:
-#         self.algo_name = algo_name  # 算法名称
-#         self.env_name = env_name  # 环境名称
-#         self.device = torch.device(
-#             "cuda" if torch.cuda.is_available() else "cpu")  # 检测GPU
-#         self.result_path = curr_path + "/outputs/" + self.env_name + \
-#             '/' + curr_time + '/results/'  # 保存结果的路径
-#         self.model_path = curr_path + "/outputs/" + self.env_name + \
-#             '/' + curr_time + '/models/'  # 保存模型的路径
-#         self.save = True  # 是否保存图片
 
 class RosTopic:
     def __init__(self):
@@ -481,31 +430,33 @@ class Trainer:
         self.env = env
         self.model_path = model_path
         # TODO: fixed
-        # self.num_iterations = 15000 # @param {type:"integer"}
-        # test
-        self.num_iterations = 60000 # @param {type:"integer"}
-        # self.initial_collect_steps = 1000  # @param {type:"integer"}
-        # test
-        self.initial_collect_steps = 1000  # @param {type:"integer"}
-        self.collect_steps_per_iteration = 1  # @param {type:"integer"}
-        self.replay_buffer_capacity = 100000  # @param {type:"integer"}
 
+        self.num_iterations = 60000 # 训练的总迭代次数
+        self.initial_collect_steps = 1000  # 初始数据收集的步数
+        self.collect_steps_per_iteration = 1  # 每次迭代的数据收集步数
+        self.replay_buffer_capacity = 100000  # 重放缓冲区的容量
+
+         # 初始化随机策略，用于初始数据收集
         self.random_policy = random_tf_policy.RandomTFPolicy(self.env.time_step_spec(),
                                                 self.env.action_spec())
-
+        
+        # 初始化重放缓冲区，用于存储采集的数据
         self.replay_buffer = tf_uniform_replay_buffer.TFUniformReplayBuffer(
             data_spec=self.agent.collect_data_spec,
             batch_size=self.env.batch_size,
             max_length=self.replay_buffer_capacity)
-        # add -----
+        
+        # 配置数据收集驱动，每次收集指定步数的数据
         self.collect_driver = dynamic_step_driver.DynamicStepDriver(
             self.env,
             self.agent.collect_policy,
             observers=[self.replay_buffer.add_batch],
             num_steps=self.collect_steps_per_iteration)
-        # Initial data collection
+        
+        # 运行初始数据收集
         self.collect_driver.run()
 
+        # 设置模型保存路径和检查点
         self.checkpoint_dir = os.path.join(self.model_path, 'checkpoint')
         self.train_checkpointer = common.Checkpointer(
             ckpt_dir=self.checkpoint_dir,
@@ -515,48 +466,38 @@ class Trainer:
             replay_buffer=self.replay_buffer,
             global_step=self.agent.train_step_counter
         )
+
+        # 初始化或恢复检查点
         self.train_checkpointer.initialize_or_restore()
+
+        # 设置策略保存路径和策略保存器
         self.policy_dir = os.path.join(self.model_path, 'policy')
         self.tf_policy_saver = policy_saver.PolicySaver(agent.policy)
-        # add -----
-        self.batch_size = 64  # @param {type:"integer"}
-        self.n_step_update = 2  # @param {type:"integer"}
-        self.num_eval_episodes = 10  # @param {type:"integer"}
-        self.log_interval = 200  # @param {type:"integer"}
-        self.eval_interval = 1000  # @param {type:"integer"}
-        self.checkpoint_interval = 10000
-    def compute_avg_return(self, environment, policy, num_episodes=10):
-
-        total_return = 0.0
-        for _ in range(num_episodes):
-
-            time_step = environment.reset()
-            episode_return = 0.0
-
-            while not time_step.is_last():
-                action_step = policy.action(time_step)
-                time_step = environment.step(action_step.action)
-                episode_return += time_step.reward
-            total_return += episode_return
-
-        avg_return = total_return / num_episodes
-        return avg_return.numpy()[0]
+        
+        # 设定其他训练参数
+        self.batch_size = 64                # 每个批次的数据量
+        self.n_step_update = 2              # N步更新
+        self.num_eval_episodes = 10         # 每次评估的回合数
+        self.log_interval = 200             # 日志记录的间隔
+        self.eval_interval = 1000           # 评估的间隔
+        self.checkpoint_interval = 10000    # 检查点保存的间隔
 
     def collect_step(self, environment, policy):
+        # 在当前环境状态下使用指定策略执行一步操作，并将收集的轨迹添加到重放缓冲区
         time_step = environment.current_time_step()
         action_step = policy.action(time_step)
         next_time_step = environment.step(action_step.action)
         traj = trajectory.from_transition(time_step, action_step, next_time_step)
 
-        # Add trajectory to the replay buffer
+        # 将轨迹添加到重放缓冲区
         self.replay_buffer.add_batch(traj)
 
         return next_time_step
 
     def train(self, pre_fr=0, train_eps = 300):
         rospy.loginfo("-------------數據採集------------")
-        # self.initial_collect_steps = 2
-        # time_step_collect = self.env.reset()
+
+        # 进行初始数据收集
         for _ in range(self.initial_collect_steps):
             
             time_step_collect = self.collect_step(self.env, self.random_policy)
@@ -568,81 +509,69 @@ class Trainer:
 
             if time_step_collect.is_last():
                 time_step_collect = self.env.reset()
-            # This loop is so common in RL, that we provide standard implementations of
-            # these. For more details see the drivers module.
 
-            # Dataset generates trajectories with shape [BxTx...] where
-            # T = n_step_update + 1.
+        # 设置数据集以供训练使用
         dataset = self.replay_buffer.as_dataset(
             num_parallel_calls=3, sample_batch_size=self.batch_size,
             num_steps=self.n_step_update + 1).prefetch(3)
 
         iterator = iter(dataset)
-        # (Optional) Optimize by wrapping some of the code in a graph using TF function.
+
+        # 将智能体的训练函数包装在TF函数中，以优化性能
         self.agent.train = common.function(self.agent.train)
 
-        # Reset the train step
+        # 重置训练步骤计数器
         self.agent.train_step_counter.assign(0)
         rospy.loginfo("Evaluate the agent's policy once before training.")
-        # Evaluate the agent's policy once before training.
-        # avg_return = self.compute_avg_return(self.env, self.agent.policy, self.num_eval_episodes)
-        # returns = [avg_return]
 
         rospy.loginfo("-------------Train Start------------")
         episode_return = 0.0
-        # self.num_iterations =10 
+        
+        # 進行訓練迭代 60000
         for _ in range(self.num_iterations):
-
-        # Collect a few steps using collect_policy and save to the replay buffer.
+        # 每次迭代中收集指定步数的数据 1
             for _ in range(self.collect_steps_per_iteration):
                 time_step = self.collect_step(self.env, self.agent.collect_policy)
             
-            # Sample a batch of data from the buffer and update the agent's network.
+            # 从重放缓冲区采样批次数据进行训练
             experience, unused_info = next(iterator)
             train_loss = self.agent.train(experience)
             step = self.agent.train_step_counter.numpy()
             tb.add_scalar("/trained-model/Loss_per_frame/", float(train_loss.loss), step)
-            # 開始tensorboard紀錄
+            
+            # 開始tensorboard紀錄，记录和打印训练过程中的相关信息
             step_reward = time_step.reward.numpy()[0]
             step_state = time_step.observation.numpy()[0]
-            
             tb.add_scalar("/trained-model/train_step_reward/", step_reward, step)
-            # tb.add_scalar("/trained-model/Average_Return/", avg_return, step)
             episode_return += step_reward
             rospy.loginfo("step_reward: %s", step_reward)
             rospy.loginfo("step_state: %s", step_state)
             rospy.loginfo("step: %s", step)
             rospy.loginfo("train_loss: %s", float(train_loss.loss))
             rospy.loginfo("================================")
+
             if time_step.is_last():
                 time_step = self.env.reset()
-                # episode_return = 0.0
                 rospy.loginfo("episode_return: %s", episode_return)
                 rospy.loginfo("------episode end.-----------")
                 tb.add_scalar("/trained-model/Episode_Return/", episode_return, step)
                 episode_return = 0.0
 
+            # 定期打印日志信息
             if step % self.log_interval == 0:
                 print('step = {0}: loss = {1}'.format(step, train_loss.loss))
                 tb.add_scalar("/trained-model/loss_log/",  float(train_loss.loss), step)
-            # if step % self.eval_interval == 0:
-            #     avg_return = self.compute_avg_return(self.env, self.agent.policy, self.num_eval_episodes)
-            #     print('step = {0}: Average Return = {1:.2f}'.format(step, avg_return))
-            #     tb.add_scalar("/trained-model/Average_Return/", avg_return, step)
-            #     # returns.append(avg_return)
-            # 每一萬步儲存一次 model 
-            # self.checkpoint_interval = 2
+
+            # 定期保存检查点和模型
             if step % self.checkpoint_interval == 0:
                 filename = 'policy_step{}'.format(self.agent.train_step_counter.numpy())
                 self.train_checkpointer.save(self.agent.train_step_counter)
                 self.tf_policy_saver.save(self.policy_dir+ '/' + filename)
 
-        # end save final train model 
-        # filename = 'policy_step{}'.format(self.agent.train_step_counter.numpy())
+        # 保存最終的訓練模型
         self.train_checkpointer.save(self.agent.train_step_counter)
         self.train_checkpointer.initialize_or_restore()
         self.agent.global_step = tf.compat.v1.train.get_global_step()
-
         self.tf_policy_saver.save(self.policy_dir)
 
 
@@ -1058,7 +987,7 @@ if __name__ == "__main__":
             agent = PDQNAgent(env.state_dim, env.action_dim, env.param_dim, log_dir=log_dir)
 
             # 训练 PDQN 代理
-            train_pdqn(agent, env)
+            train_pdqn(agent, env, model_path)
             break
 
 
