@@ -1029,7 +1029,7 @@ if __name__ == "__main__":
         input_text = input("Enter some next: ")
         rospy.loginfo("Input text: %s" % input_text)
         
-        if ros_topic.cmd_run == 5:
+        if ros_topic.cmd_run == 10:
             tb = tensorboardX.SummaryWriter()
             ros_topic.cmd_run = 0
             if ros_topic.DRL_algorithm == 'DQN':
@@ -1042,7 +1042,7 @@ if __name__ == "__main__":
                 model_path = curr_path + '/train_results' + '/C51_outputs/' + op_function_flag + '/' + str(arm_structure_dof) + \
                 '/' + str(ros_topic.DRL_algorithm) + '-' + str(arm_structure_dof) + '-' +str(drl.env.action_select) + '-' + curr_time + '/models/'  # 保存模型的路径
             elif ros_topic.DRL_algorithm == 'PDQN':
-                model_path = curr_path + '/train_results' + '/C51_outputs/' + op_function_flag + '/' + str(arm_structure_dof) + \
+                model_path = curr_path + '/train_results' + '/PDQN_outputs/' + op_function_flag + '/' + str(arm_structure_dof) + \
                 '/' + str(ros_topic.DRL_algorithm) + '-' + str(arm_structure_dof) + '-' +str(drl.env.action_select) + '-' + curr_time + '/models/'  # 保存模型的路径
 
             # 訓練

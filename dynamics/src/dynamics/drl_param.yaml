@@ -1,7 +1,7 @@
 op_function: case2_real_pdqn
 arm_structure_dof: 6
 DRL_algorithm: 'PDQN'
-cmd_run: 5 
+cmd_run: 10 
 test_model_name: 'DQN-6-variable-20240513-155850'
 op_dof: 6
 op_payload: 3
