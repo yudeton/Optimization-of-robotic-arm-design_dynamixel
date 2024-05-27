@@ -91,10 +91,17 @@ from tf_agents.policies import random_tf_policy
 from tf_agents.replay_buffers import tf_uniform_replay_buffer
 from tf_agents.trajectories import trajectory
 from tf_agents.utils import common
-from tf_agents.policies import policy_saver # add
-from tf_agents.policies import py_tf_eager_policy # add
+from tf_agents.policies import policy_saver 
+from tf_agents.policies import py_tf_eager_policy 
 
-# dpqn
+# PDQNPolicy ++
+from tf_agents.policies import TFPolicy # add
+from tf_agents.trajectories import policy_step
+from tf_agents.trajectories.time_step import TimeStep
+from tf_agents.specs import tensor_spec
+
+
+# pdqn
 from tensorflow.keras import layers, Model
 
 # add
@@ -187,9 +194,28 @@ class ReplayBuffer:
         terminals = self.terminal_memory[batch]
 
         return states, actions, params, rewards, states_
+
+class PDQNPolicy(TFPolicy):
+    def __init__(self, q_net, param_net, time_step_spec, action_spec):
+        self._q_net = q_net
+        self._param_net = param_net
+        super(PDQNPolicy, self).__init__(time_step_spec, action_spec)
+
+    def _action(self, time_step: TimeStep, policy_state, seed):
+        state = time_step.observation
+        params = self._param_net(state)
+        q_input = tf.concat([state, params], axis=1)
+        q_values = self._q_net(q_input)
+        action = tf.argmax(q_values, axis=1, output_type=tf.int32)
+        return policy_step.PolicyStep(action, policy_state)
+
+    def _distribution(self, time_step: TimeStep, policy_state):
+        raise NotImplementedError("This policy does not support action distributions.")
+
+
 #定义 PDQN 代理，包括选择动作和学习过程
 class PDQNAgent:
-    def __init__(self, state_dim, action_dim, param_dim, buffer_size=100000, batch_size=64, gamma=0.99, lr_q=0.001, lr_p=0.001, log_dir=None):
+    def __init__(self, state_dim, action_dim, param_dim, buffer_size=100000, batch_size=64, gamma=0.99, lr_q=0.001, lr_p=0.001, log_dir=None, model_path=None):
         self.state_dim = state_dim
         self.action_dim = action_dim
         self.param_dim = param_dim
@@ -209,7 +235,6 @@ class PDQNAgent:
         # 设置策略保存路径和策略保存器
         if log_dir:
             self.summary_writer = tf.summary.create_file_writer(log_dir)
-
 
     def update_target_network(self):
         self.target_q_net.set_weights(self.q_net.get_weights())
@@ -270,11 +295,19 @@ class PDQNAgent:
         return loss_q.numpy(), loss_p.numpy()
 
     def save_model(self, episode):
+        
+        '''
+        filename = f'policy_step{episode}'
+        self.train_checkpointer.save(global_step=episode)  # 保存检查点
+        self.tf_policy_saver.save(self.policy_dir + '/' + filename)  # 保存策略
+        '''
         model_dir = f"models/episode_{episode}"
         if not os.path.exists(model_dir):
             os.makedirs(model_dir)
         self.q_net.save_weights(os.path.join(model_dir, 'q_net.h5'))
         self.param_net.save_weights(os.path.join(model_dir, 'param_net.h5'))
+        
+
 
 #訓練過程
 
@@ -986,7 +1019,7 @@ if __name__ == "__main__":
             # # # 測試
             env = RobotOptEnv()
             log_dir = os.path.join("logs", datetime.datetime.now().strftime("%Y%m%d-%H%M%S"))
-            agent = PDQNAgent(env.state_dim, env.action_dim, env.param_dim, log_dir=log_dir)
+            agent = PDQNAgent(env.state_dim, env.action_dim, env.param_dim, log_dir=log_dir, model_path=model_path)
 
             # 训练 PDQN 代理
             train_pdqn(agent, env, model_path)
