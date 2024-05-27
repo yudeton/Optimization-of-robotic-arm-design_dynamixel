@@ -189,7 +189,7 @@ class ReplayBuffer:
         return states, actions, params, rewards, states_
 #定义 PDQN 代理，包括选择动作和学习过程
 class PDQNAgent:
-    def __init__(self, state_dim, action_dim, param_dim, buffer_size=50000, batch_size=64, gamma=0.99, lr_q=0.001, lr_p=0.001, log_dir=None):
+    def __init__(self, state_dim, action_dim, param_dim, buffer_size=100000, batch_size=64, gamma=0.99, lr_q=0.001, lr_p=0.001, log_dir=None):
         self.state_dim = state_dim
         self.action_dim = action_dim
         self.param_dim = param_dim
@@ -201,11 +201,12 @@ class PDQNAgent:
         self.target_q_net = QNet(state_dim + param_dim, action_dim)
         self.param_net = ParamNet(state_dim, param_dim)
 
-        self.optimizer_q = tf.keras.optimizers.Adam(learning_rate=lr_q)
-        self.optimizer_p = tf.keras.optimizers.Adam(learning_rate=lr_p)
+        self.optimizer_q = tf.keras.optimizers.Adam(learning_rate=lr_q) #配置優化器
+        self.optimizer_p = tf.keras.optimizers.Adam(learning_rate=lr_p) #配置優化器
         
-        self.update_target_network()
+        self.update_target_network()    #更新目標網路
 
+        # 设置策略保存路径和策略保存器
         if log_dir:
             self.summary_writer = tf.summary.create_file_writer(log_dir)
 
@@ -226,6 +227,7 @@ class PDQNAgent:
             params = params.numpy()[0]
         return action, params
 
+    # 将轨迹添加到重放缓冲区
     def store_transition(self, state, action, params, reward, state_):
         self.buffer.store_transition(state, action, params, reward, state_)
 
@@ -278,7 +280,7 @@ class PDQNAgent:
 
 def train_pdqn(agent, env, model_path, episodes=20000, epsilon_start=1.0, epsilon_end=0.1, epsilon_decay=0.995, save_interval=10000):
     epsilon = epsilon_start
-    for episode in range(episodes):
+    for episode in range(episodes):     #訓練的總迭代次數
         state = env.reset()
         done = False
         total_reward = 0
@@ -287,7 +289,7 @@ def train_pdqn(agent, env, model_path, episodes=20000, epsilon_start=1.0, epsilo
         while not done:
             action, params = agent.choose_action(state, epsilon)
             next_state, reward, done, _ = env.step((action, params))
-            agent.store_transition(state, action, params, reward, next_state)
+            agent.store_transition(state, action, params, reward, next_state)   # 在当前环境状态下使用指定策略执行一步操作，并将收集的轨迹添加到重放缓冲区
             loss_q, loss_p = agent.learn()
             state = next_state
             total_reward += reward
@@ -305,7 +307,7 @@ def train_pdqn(agent, env, model_path, episodes=20000, epsilon_start=1.0, epsilo
             agent.summary_writer.flush()
 
         if episode % save_interval == 0:
-            agent.save_model(episode)
+            agent.save_model(episode)   # 设置模型保存路径和检查点
 
 
 #-----------dpqn-----------
