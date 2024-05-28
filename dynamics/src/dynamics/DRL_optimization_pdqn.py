@@ -311,10 +311,13 @@ class PDQNAgent:
 
 #訓練過程
 
-def train_pdqn(agent, env, model_path, episodes=20000, epsilon_start=1.0, epsilon_end=0.1, epsilon_decay=0.995, save_interval=10000, initial_collect_steps=1000):
+def train_pdqn(agent, env, model_path, episodes=20000, epsilon_start=1.0, epsilon_end=0.1, epsilon_decay=0.995, save_interval=5000, initial_collect_steps=1000):
     #--------------------------------------+++++++++
     # 初始数据采集
+    rospy.loginfo("-----------初始數據採集------------")
     for _ in range(initial_collect_steps):
+        rospy.loginfo("initial_collect_steps: %s", _)
+
         state = env.reset()
         done = False
         while not done:
@@ -324,7 +327,8 @@ def train_pdqn(agent, env, model_path, episodes=20000, epsilon_start=1.0, epsilo
             next_state, reward, done, _ = env.step((action, params))
             agent.store_transition(state, action, params, reward, next_state)
             state = next_state
-    
+            rospy.loginfo("collect_step_reward: %s", reward)
+            rospy.loginfo("collect_step_state: %s", state)
     #--------------------------------------------------++++++
 
     epsilon = epsilon_start

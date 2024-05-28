@@ -119,7 +119,7 @@ class RobotOptEnv(gym.Env):
         
         # 定义动作空间：6个离散动作，每个动作有2个连续参数--------------------------------------------------------------------
         self.action_space = spaces.Tuple((
-            spaces.Discrete(6),
+            spaces.Discrete(9),
             spaces.Box(low=-1.0, high=1.0, shape=(2,), dtype=np.float64)
         ))
 
